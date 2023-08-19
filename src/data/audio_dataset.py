@@ -34,3 +34,6 @@ class AudioSpectrogramDataset(Dataset):
 
         spectrogram = torch.FloatTensor(spectrogram).unsqueeze(0)
         return spectrogram
+
+    def get_data_size(self):
+        return self.__getitem__(0).size()

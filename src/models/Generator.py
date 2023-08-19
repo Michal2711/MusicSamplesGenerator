@@ -1,15 +1,14 @@
 import torch.nn as nn
 
-height = 256
-width = 173
-latent_dim = 100
-
 class Generator(nn.Module):
-    def __init__(self):
+    def __init__(self, height, width, latent_dim=100):
         super(Generator, self).__init__()
 
-        self.init_size = height // 4
-        self.l1 = nn.Sequential(nn.Linear(latent_dim, 128 * self.init_size * (width // 4)))
+        self.height = height
+        self.width = width
+        self.latent_dim = latent_dim
+        self.init_size = self.height // 4
+        self.l1 = nn.Sequential(nn.Linear(self.latent_dim, 128 * self.init_size * (self.width // 4)))
 
         self.conv_blocks = nn.Sequential(
             nn.BatchNorm2d(128),
@@ -27,6 +26,6 @@ class Generator(nn.Module):
 
     def forward(self, z):
         out = self.l1(z)
-        out = out.view(out.shape[0], 128, self.init_size, width // 4)
+        out = out.view(out.shape[0], 128, self.init_size, self.width // 4)
         img = self.conv_blocks(out)
         return img

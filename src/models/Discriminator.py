@@ -1,9 +1,12 @@
 import torch.nn as nn
-
+import torch
 
 class Discriminator(nn.Module):
-    def __init__(self):
+    def __init__(self, height, width):
         super(Discriminator, self).__init__()
+
+        self.height = height
+        self.width = width
 
         def discriminator_block(in_filters, out_filters, bn=True):
             block = [nn.Conv2d(in_filters, out_filters, 3, 2, 1), nn.LeakyReLU(0.2, inplace=True), nn.Dropout2d(0.25)]
@@ -18,7 +21,12 @@ class Discriminator(nn.Module):
             *discriminator_block(64, 128),
         )
 
-        self.adv_layer = nn.Sequential(nn.Linear(45056, 1), nn.Sigmoid())
+        dummy_data = torch.zeros((1, 1, self.height, self.width))
+        dummy_out = self.model(dummy_data)
+        flattened_size = dummy_out.view(-1).size(0)
+
+        # self.adv_layer = nn.Sequential(nn.Linear(45056, 1), nn.Sigmoid())
+        self.adv_layer = nn.Sequential(nn.Linear(flattened_size, 1), nn.Sigmoid())
 
     def forward(self, img):
         out = self.model(img)

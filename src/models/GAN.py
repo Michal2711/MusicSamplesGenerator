@@ -6,22 +6,24 @@ import torch.optim as optim
 
 
 class GAN():
-    def __init__(self, latent_dim, loss):
+    def __init__(self, height, width, latent_dim=100, loss='BCE'):
         super().__init__()
 
         self.latent_dim = latent_dim
+        self.height = height
+        self.width = width
 
         self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
-        self.generator = Generator().to(self.device)
-        self.discriminator = Discriminator().to(self.device)
+        self.generator = Generator(height, width, latent_dim).to(self.device)
+        self.discriminator = Discriminator(height, width).to(self.device)
 
         if loss not in ['MSE', 'BCE']:
             raise ValueError(
                 "Loss type incorrect. Possibilities: ['MSE', 'BCE']"
             )
 
-        self.adversarial_loss = torch.nn.BCELoss().to(self.device)
+        self.adversarial_loss = torch.nn.MSELoss().to(self.device)
 
         self.optimizer_G = optim.Adam(self.generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
         self.optimizer_D = optim.Adam(self.discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
