@@ -6,15 +6,20 @@ import torch.optim as optim
 
 
 class GAN():
-    def __init__(self):
+    def __init__(self, latent_dim, loss):
         super().__init__()
 
-        self.latent_dim = 100
+        self.latent_dim = latent_dim
 
         self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
         self.generator = Generator().to(self.device)
         self.discriminator = Discriminator().to(self.device)
+
+        if loss not in ['MSE', 'BCE']:
+            raise ValueError(
+                "Loss type incorrect. Possibilities: ['MSE', 'BCE']"
+            )
 
         self.adversarial_loss = torch.nn.BCELoss().to(self.device)
 
@@ -48,6 +53,8 @@ class GAN():
                 # ---------------------
                 self.optimizer_D.zero_grad()
 
+                # print(real_spectrograms.dtype, real_spectrograms.shape)
+                
                 real_loss = self.adversarial_loss(self.discriminator(real_spectrograms), real)
                 fake_loss = self.adversarial_loss(self.discriminator(gen_spectrograms.detach()), fake)
                 d_loss = (real_loss + fake_loss) / 2

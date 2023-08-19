@@ -1,7 +1,7 @@
 import torch.nn as nn
 
 height = 256
-width = 345
+width = 173
 latent_dim = 100
 
 class Generator(nn.Module):
