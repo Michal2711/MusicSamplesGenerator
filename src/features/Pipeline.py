@@ -41,6 +41,7 @@ class Pipeline():
             self.normalization,
             self.stft,
             self.transform_to_torch
+            # not supported to convert complex numbers 
         ]
 
         self.post_pipeline = [
@@ -56,7 +57,8 @@ class Pipeline():
             self.fade,
             self.normalization,
             self.mel,
-            self.transform_to_torch
+            self.transform_to_torch,
+            self.cut
         ]
 
         self.post_pipeline = [
@@ -135,7 +137,6 @@ class Pipeline():
         return librosa.util.normalize(audio)
     
     def denormalization(self, audio):
-        # store max value for audio for better implementation
         return audio * np.max(np.abs(audio))
 
     def fade(self, audio, percent=30.):
@@ -146,12 +147,16 @@ class Pipeline():
         audio[-fade_idx:] *= fade_curve
         return audio
 
+    def cut(self, spectrogram):
+        spectrogram = spectrogram[:, :160]
+        return spectrogram
+
     def mel(self, wave):
         return librosa.feature.melspectrogram(
             y=wave,
             # sr = self.resample_sr,
             n_fft=getattr(self, 'n_fft', 1024),
-            hop_length=getattr(self, 'hop_length', 512), # 512
+            hop_length=getattr(self, 'hop_length', 512),
             win_length=getattr(self, 'win_length', 1024),
             n_mels =getattr(self, 'n_mels', 256)
         )
@@ -162,7 +167,7 @@ class Pipeline():
             # sr=self.resample_sr,
             n_iter=100,
             n_fft=getattr(self, 'n_fft', 1024),
-            hop_length=getattr(self, 'hop_length', 512), # 512
+            hop_length=getattr(self, 'hop_length', 512),
             win_length=getattr(self, 'win_length', 1024),
         )
     
@@ -224,7 +229,15 @@ class Pipeline():
         )
 
     def transform_to_torch(self, audio):
-        return torch.from_numpy(audio)
+        if type(audio) is np.ndarray:
+            if np.iscomplexobj(audio):
+                return torch.tensor(audio, dtype=torch.complex64)
+            return torch.from_numpy(audio)
+        elif type(audio) is torch.Tensor:
+            return audio.float()
+        else:
+            return torch.FloatTensor(audio)
+        # return torch.from_numpy(audio)
     
     def transform_to_numpy(self, audio):
         return audio.numpy()

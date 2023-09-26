@@ -16,7 +16,7 @@ class AudioSpectrogramDataset(Dataset):
         self.file_list = glob.glob(os.path.join(base_directory, '*.wav'), recursive=True)
         self.pipeline = Pipeline(self.spectro_type)
 
-        if spectro_type not in ['waveform', 'stft', 'mel',' mfcc', 'cqt']:
+        if spectro_type not in ['waveform', 'stft', 'mel', 'mfcc', 'cqt']:
             raise ValueError(
                 "Spectrogram type incorrect. Possibilities: ['waveform', 'stft', 'mel',' mfcc', 'cqt']"
             )
@@ -32,7 +32,10 @@ class AudioSpectrogramDataset(Dataset):
 
         spectrogram = self.pipeline.process(audio_path)
 
-        spectrogram = torch.FloatTensor(spectrogram).unsqueeze(0)
+        if spectrogram.is_complex():
+            spectrogram = spectrogram.to(dtype=torch.complex64).unsqueeze(0)
+        else:
+            spectrogram = torch.FloatTensor(spectrogram).unsqueeze(0)
         return spectrogram
 
     def get_data_size(self):
