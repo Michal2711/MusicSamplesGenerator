@@ -1,8 +1,11 @@
+import torch
+import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 
-from Base_models.BaseGAN import BaseGAN
-from PGenerator import PGenerator
-from PDiscriminator import PDiscriminator
+from models.Base_models.BaseGAN import BaseGAN
+from models.PGAN_model.PDiscriminator import PDiscriminator
+from models.PGAN_model.PGenerator import PGenerator
 
 class PGAN(BaseGAN):
 
@@ -12,26 +15,31 @@ class PGAN(BaseGAN):
                  negative_slope=0.2,
                  normalization=True,
                  mini_batch_normalization=False,
-                 init_resolution_size=(8, 5)):
+                 init_resolution_size=(8, 5),
+                 num_epochs_per_resolution = 10):
         r"""
         Args:
-
+            depths ([int]):
+            init_resolution_size ((int, int)):
         """
+        super(PGAN, self).__init__(latent_dim=latent_dim)
 
         self.init_depth = depths[0]
-        self.latent_dim = latent_dim
+        self.depths = depths
         self.negative_slope = negative_slope
         self.normalization = normalization
         self.mini_batch_normalization = mini_batch_normalization
         self.init_resolution_size = init_resolution_size
+        self.num_epochs_per_resolution = num_epochs_per_resolution
         self.n_blocks = len(depths)
         self.alpha = 0
 
-        BaseGAN.__init__(self, latent_dim=latent_dim)
+        self.generator = self.get_generator().to(self.device)
+        self.discriminator = self.get_discriminator().to(self.device)
+        self.optimizer_G = self.get_optimizer_G()
+        self.optimizer_D = self.get_optimizer_D()
 
-    # TODO PGAN + BaseGAN
-    def update_config(self, config):
-        pass
+        self.criterion = nn.MSELoss()
 
     def get_generator(self):
         generator = PGenerator(
@@ -41,7 +49,6 @@ class PGAN(BaseGAN):
             LReLU_negative_slope=self.negative_slope,
             normalization=self.normalization
         )
-
         return generator
 
     def get_discriminator(self):
@@ -51,40 +58,27 @@ class PGAN(BaseGAN):
             LReLU_negative_slope=self.negative_slope,
             normalization=self.normalization
         )
-
         return discriminator
     
     def get_optimizer_G(self):
-        return optim.Adam(filter(lambda p: p.requires_grad, self.generator.parameters()),
-                          betas=[0, 0.99], lr=self.lr)
+        return optim.Adam(self.generator.parameters(), lr=self.lr, betas=(0, 0.99))
     
     def get_optimizer_D(self):
-        return optim.Adam(filter(lambda p: p.requires_grad, self.discriminator.parameters()),
-                          betas=[0, 0.99], lr=self.lr)
+        return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0, 0.99))
     
-    def add_scale(self, new_depth):
-
-        self.generator = self.get_original_generator()
-        self.discriminator = self.get_original_discriminator()
-
+    def add_new_block(self, new_depth):
         if type(new_depth) is list:
-            self.generator.addScale(new_depth[0])
-            self.discriminator.addScale(new_depth[1])
+            self.generator.add_next_block(new_depth[0])
+            self.discriminator.add_next_block(new_depth[1])
         else:
-            self.generator.addScale(new_depth)
-            self.discriminator.addScale(new_depth)
-
-        # TODO moze depthOtherScales sie przyda
-        self.update_solvers_device()
+            self.generator.add_next_block(new_depth)
+            self.discriminator.add_next_block(new_depth)
 
     def update_alpha(self, new_alpha):
-        self.get_original_generator().set_alpha(new_alpha)
-        self.get_original_discriminator().set_alpha(new_alpha)
+        self.generator.set_alpha(new_alpha)
+        self.discriminator.set_alpha(new_alpha)
 
         self.alpha = new_alpha
-
-    def get_output_size(self):
-        return self.get_original_generator().getOutputSize()
     
     def test_generator(self, input):
         if type(input) == list:
@@ -98,22 +92,60 @@ class PGAN(BaseGAN):
         else:
             return out.detach().cpu()
         
-    def optimize_generator(self, losses):
-        pass
-        # batch_size = self.real_input.size(0)
+    def train(self, dataloader, fade_in_percentage=0.5):
+        for resolution in range(self.n_blocks):
 
-        # self.optimizer_G.zero_grad()
-        # self.optimizer_D.zero_grad()
+            if type(self.num_epochs_per_resolution) is list:
+                fade_epochs = int(self.num_epochs_per_resolution[resolution] * fade_in_percentage)
+                num_epochs = self.num_epochs_per_resolution[resolution]
+            else:
+                fade_epochs = int(self.num_epochs_per_resolution * fade_in_percentage)
+                num_epochs = self.num_epochs_per_resolution
 
-        # input_vector = self.create_noise(batch_size)
+            for epoch in range(num_epochs):
+                if resolution > 0:
+                    if epoch < fade_epochs:
+                        self.update_alpha((epoch+1)/ fade_epochs)
+                    elif epoch == fade_epochs:
+                        self.update_alpha(1)
+                    
+                for _, data in enumerate(dataloader):
+                    # 1. Train Discriminator
+                    self.optimizer_D.zero_grad()
 
-        # fake_generation = self.generator(input_vector)
-        # prediction_fake, _ = self.discriminator(fake_generation, True)
+                    real_images = data.to(self.device)
+                    b_size = real_images.size(0)
+                    label = torch.ones((b_size,), dtype=torch.float, device=self.device)
+                    resolution_size = self.generator.get_output_size()
+                    # real_images = F.interpolate(data, size=resolution_size, mode="nearest")
+                    real_images_low_res = F.adaptive_avg_pool2d(real_images, output_size=resolution_size)
+                    output = self.discriminator(real_images_low_res).view(-1)
+                    real_loss = self.criterion(output, label)
+                    real_loss.backward()
 
-        # loss_generator_fake = self.loss.
+                    # fake images
+                    noise = self.create_noise(batch_size=b_size)
+                    fake_images = self.generator(noise)
+                    label_fake = torch.zeros((b_size,), dtype=torch.float, device=self.device)
+                    output = self.discriminator(fake_images.detach()).view(-1)
+                    fake_loss = self.criterion(output, label_fake)
+                    fake_loss.backward()
 
-    def optimize_discriminator(self, losses):
-        pass
+                    d_loss = (real_loss + fake_loss)
+                    self.writer.add_scalar("Loss_discriminator/train", d_loss, global_step=resolution*num_epochs + epoch)
+                    self.optimizer_D.step()
 
-    def optimize_parameters(self, input_batch):
-        pass
+                    # 2. Train Generator
+                    self.optimizer_G.zero_grad()
+                    label = torch.ones((b_size,), dtype=torch.float, device=self.device)
+                    output = self.discriminator(fake_images).view(-1)
+                    g_loss = self.criterion(output, label)
+                    self.writer.add_scalar("Loss_generator/train", g_loss, global_step=resolution*num_epochs + epoch)
+                    g_loss.backward()
+                    self.optimizer_G.step()
+
+                print(f"Resolution {resolution} - Epoch {epoch+1}/{num_epochs} - D Loss: {d_loss.item()} - G Loss: {g_loss.item()}")
+
+            if resolution < self.n_blocks-1:
+                self.add_new_block(self.depths[resolution+1])
+        self.writer.flush()

@@ -8,7 +8,7 @@ class NormalizationLayer(nn.Module):
         super(NormalizationLayer, self).__init__()
 
     def forward(self, z, epsilon=1e-8):
-        return z / torch.sqrt(torch.mean(z ** 2, dim=1, keepdim=True) + 1e-8)
+        return z / torch.sqrt(torch.mean(z ** 2, dim=1, keepdim=True) + epsilon)
 
 
 class PGenerator(nn.Module):
@@ -26,9 +26,9 @@ class PGenerator(nn.Module):
         self.init_depth = init_depth # number of channels for first resolution
         self.output_depth = output_depth # number of output channels
         self.init_resolution_size = init_resolution_size # 
-        self.scale_factor=scale_factor
+        self.scale_factor=scale_factor # parameter for upsampling
         self.latent_dim = latent_dim
-        self.LReLU_negative_slope = LReLU_negative_slope # parametr LReLU
+        self.LReLU_negative_slope = LReLU_negative_slope
         self.kernel_size = 3
         self.padding = 1
         self.normalization = normalization
@@ -36,153 +36,162 @@ class PGenerator(nn.Module):
 
         self.depths = [init_depth]
 
-        self.LeakyRelu = nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
-        self.scaleLayers = nn.ModuleList()
-        self.toRGBLayers = nn.ModuleList()
+        self.blocks = nn.ModuleList()
 
         self.normalizationLayer = None
         if normalization:
             self.normalizationLayer = NormalizationLayer()
 
-        self.initFirstLinearLayer()
-        self.initScale0Layer()
+        self.init_first_linear_layer()
+        self.init_first_block()
 
         self.alpha = 0
 
-    def initFirstLinearLayer(self):
-        self.l1 = nn.Linear(self.latent_dim, self.depths[0] * self.init_resolution_size[0] * self.init_resolution_size[1])
-
-    def initScale0Layer(self):
-        self.groupScale0 = nn.ModuleList()
-
-        self.groupScale0.append(
-            nn.ConvTranspose2d(
-                in_channels=self.depths[0],
-                out_channels=self.depths[0],
-                kernel_size=self.kernel_size,
-                padding=self.padding
-            )
-        )
-
-        self.toRGBLayers.append(
-            nn.Conv2d(
-                in_channels=self.depths[0],
-                out_channels=self.output_depth,
-                kernel_size=1,
-            )
-        )
-
-    def getOutputSize(self):
-        # maybe -1 with 2**(here)
-        if type(self.init_resolution_size) == tuple:
-            size_h = int(self.init_resolution_size[0] * (2**(len(self.toRGBLayers))))
-            size_w = int(self.init_resolution_size[1] * (2**(len(self.toRGBLayers))))
-            return (size_h, size_w)
+    def get_current_device(self):
+        if torch.cuda.is_available():
+            device = torch.device("cuda:0")
         else:
-            size = self.init_resolution_size * (2**(len(self.toRGBLayers)))
-            return (size, size)
+            device = torch.device("cpu")    
+        return device
 
-    def addScale(self, new_depth):
-        r"""
-            Args:
-                - depths - depths for each convolutional layer
-        """
-        last_depth = self.depths[-1]
-        self.depths.append(new_depth)
+    def init_first_linear_layer(self):
+        self.l1 = nn.Sequential(
+            nn.Linear(self.latent_dim, self.init_depth * self.init_resolution_size[0] * self.init_resolution_size[1]),
+            nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
+        )
 
-        self.scaleLayers.append(nn.ModuleList())
+    def init_first_block(self):
+        self.base_block = nn.ModuleList()
 
-        self.scaleLayers[-1].append(
+        self.base_block.append(
+            nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels=self.depths[0],
+                    out_channels=self.depths[0],
+                    kernel_size=self.kernel_size,
+                    padding=self.padding
+                ),
+                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
+            )
+        )
+
+        self.base_block.append(
+            nn.Sequential(
+                nn.Conv2d(
+                    in_channels=self.depths[0],
+                    out_channels=self.output_depth,
+                    kernel_size=1,
+                )
+            )
+        )
+
+    def create_block(self, last_depth, new_depth):
+        block = nn.ModuleList()
+        block.append(nn.Sequential(
+            nn.Upsample(scale_factor=self.scale_factor, mode='nearest'),
             nn.ConvTranspose2d(
                 in_channels=last_depth,
                 out_channels=new_depth,
                 kernel_size=self.kernel_size,
                 padding=self.padding
-            )
-        )
-        self.scaleLayers[-1].append(
+            ),
+            nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
+            # self.normalizationLayer(),
             nn.ConvTranspose2d(
                 in_channels=new_depth,
                 out_channels=new_depth,
                 kernel_size=self.kernel_size,
                 padding=self.padding
-            )
-        )
+            ),
+            nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
+        ))
 
-        self.toRGBLayers.append(
-            nn.Conv2d(
-                in_channels=new_depth,
-                out_channels=self.output_depth,
-                kernel_size=1,
+        block.append(
+            nn.Sequential(
+                nn.Conv2d(
+                    in_channels=new_depth,
+                    out_channels=self.output_depth,
+                    kernel_size=1,
+                ),
             )
         )
+        return block
+
+    def add_next_block(self, new_depth):
+        last_depth = self.depths[-1]
+        self.depths.append(new_depth)
+
+        new_block = self.create_block(last_depth=last_depth, new_depth=new_depth)
+        current_device = self.get_current_device()
+        new_block = new_block.to(device=current_device)
+
+        self.blocks.append(new_block)
+
+    def get_output_size(self):
+        if type(self.init_resolution_size) == tuple:
+            size_h = int(self.init_resolution_size[0] * (2**(len(self.blocks))))
+            size_w = int(self.init_resolution_size[1] * (2**(len(self.blocks))))
+            return (size_h, size_w)
+        else:
+            size = self.init_resolution_size * (2**(len(self.blocks)))
+            return (size, size)
 
     def set_alpha(self, new_alpha):
         if new_alpha < 0 or new_alpha > 1:
             raise ValueError("New alpha must be in [0, 1]")
         
-        if not self.toRGBLayers:
-            raise AttributeError("Can't set an alpha layer if only init scale is defined")
+        if len(self.blocks) == 0:
+            raise AttributeError("Can't set an alpha if only base block is defined")
 
         self.alpha = new_alpha
 
-    def upscale(self, z):
-        return nn.Upsample(z, scale_factor=self.scale_factor, mode='nearest')
+    def upsampling(self, z):
+        upsample = nn.Upsample(scale_factor=self.scale_factor, mode='nearest') # downsampling
+        return upsample(z)
 
-    def change_init_view(self, z):
+    def transform_to_init_resolution_shape(self, z):
         return z.view(z.size(0), -1, self.init_resolution_size[0], self.init_resolution_size[1])
     
-    def forward(self, z, test_all_scales=False):
-
-        output = []
-
+    def forward(self, z):
         if self.normalizationLayer is not None:
             z = self.normalizationLayer(z)
 
-        z = self.LeakyRelu(self.l1(z))
-        z = self.change_init_view(z)
-
+        z = self.l1(z)
+        z = self.transform_to_init_resolution_shape(z)
         z = self.normalizationLayer(z)
 
-        for convLayer in self.groupScale0:
-            z = self.LeakyRelu(convLayer(z))
+        z = self.base_block[0](z)
+        if self.normalizationLayer is not None:
+            z = self.normalizationLayer(z)
+
+        if self.alpha == 0 and len(self.blocks) == 0:
+            y = self.base_block[1](z) # RGB Layer
+            return y
+
+        if self.alpha > 0 and len(self.blocks) == 1:
+            y = self.upsampling(z)
+            y = self.base_block[1](y) # RGB Layer
+
+        for block_number, block in enumerate(self.blocks, 0):
+            z = block[0](z)
+            # TODO tu jeszcze przed drugim conv powinno byc norm
             if self.normalizationLayer is not None:
                 z = self.normalizationLayer(z)
 
-        if self.alpha > 0 and len(self.scaleLayers) == 1:
-            y = self.toRGBLayers[-2](z)
-            y = self.upscale(y)
+            if self.alpha == 0 and block_number == (len(self.blocks)-1):
+                z = block[1](z)
 
-        if test_all_scales:
-            output.append(self.toRGBLayers[0](z))
-
-        scale = 0
-        for scale, layerGroup in enumerate(self.scaleLayers, 0):
-            z = self.upscale(z)
-            for convLayer in layerGroup:
-                z = self.LeakyRelu(convLayer(z))
-                if self.normalization is not None:
-                    z = self.normalizationLayer(z)
-
-            if test_all_scales and scale <= len(self.scaleLayers) - 2:
-                output.append(self.toRGBLayers[scale + 1](z))
-
-            if self.alpha > 0 and scale == (len(self.scaleLayers) -2 ):
-                y = self.toRGBLayers[-2](z)
-                y = self.upscale(y)
-
-        z = self.toRGBLayers[-1](z)
+            if self.alpha > 0:
+                if block_number == (len(self.blocks)-2):
+                    y = self.upsampling(z)
+                    y = block[1](y)
+                elif block_number == (len(self.blocks)-1):
+                    z = block[1](z)
 
         if self.alpha > 0:
-            z = self.alpha * y + (1.0 - self.alpha) * z
+            z = (1.0 - self.alpha * y) + self.alpha * z
 
         if self.toRGBActivation is not None:
             z = self.toRGBActivation(z)
 
-        if test_all_scales and scale !=0:
-            output.append(z)
-
-        if test_all_scales:
-            return output
-        else:
-            return z
+        return z

@@ -41,7 +41,6 @@ class Pipeline():
             self.normalization,
             self.stft,
             self.transform_to_torch
-            # not supported to convert complex numbers 
         ]
 
         self.post_pipeline = [

@@ -6,8 +6,6 @@ import glob
 import os
 import torch
 from torch.utils.data import Dataset
-import librosa
-
 
 class AudioSpectrogramDataset(Dataset):
     def __init__(self, base_directory, spectro_type):
