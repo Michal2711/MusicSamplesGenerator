@@ -12,11 +12,18 @@ class BaseGAN(nn.Module):
                  g_activation=None):
 
         r"""
+        Base class for Generative Adversarial Networks (GANs).
+
+        This class provides a skeletal structure for GANs, with methods and attributes
+        that are common across different types of GANs. It's designed to be subclassed,
+        with subclasses implementing the abstract methods `get_generator`, `get_discriminator`,
+        `get_optimizer_G`, `get_optimizer_D`, and `train`.
+
         Args:
-            latent_dim (int):
-            output_dim (int):
-            lr (float):
-            loss (string):
+            latent_dim (int): The size of the random noise vector used as input for the generator.
+            output_dim (int): The size of the output vector of the discriminator.
+            lr (float): The learning rate for the optimizers.
+            loss (string): The loss function used in training. Must be one of ['MSE', 'BCE', 'WGAN'].
         """
         super(BaseGAN, self).__init__()
 
@@ -26,9 +33,9 @@ class BaseGAN(nn.Module):
         self.g_activation = g_activation
         self.writer = SummaryWriter()
 
-        if loss not in ['MSE', 'BCE', 'WGANGP']:
+        if loss not in ['MSE', 'BCE', 'WGAN']:
             raise ValueError(
-                "Loss type incorrect. Possibilities: ['MSE', 'BCE', 'WGANGP']"
+                "Loss type incorrect. Possibilities: ['MSE', 'BCE', 'WGAN']"
             )
 
         self.set_device()

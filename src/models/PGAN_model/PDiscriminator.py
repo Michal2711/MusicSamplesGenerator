@@ -11,6 +11,15 @@ class PDiscriminator(nn.Module):
                  mini_batch_normalization=False,
                  scale_factor = 0.5,
                  normalization=True):
+        r"""
+        Args:
+            init_depth (int): The initial depth (number of channels) for the model layers.
+            init_resolution_size (tuple): The initial height and width of the input images.
+            input_depth (int): The depth (number of channels) of the input images.
+            last_layer_size (int): The size of the last layer before the output.
+            scale_factor (float): The scaling factor for downscaling the image.
+        """    
+        
         super(PDiscriminator, self).__init__()
 
         self.init_depth = init_depth

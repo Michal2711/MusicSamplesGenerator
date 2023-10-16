@@ -18,9 +18,24 @@ class PGAN(BaseGAN):
                  init_resolution_size=(8, 5),
                  num_epochs_per_resolution = 10):
         r"""
+        Progressive Growing GAN (PGAN) implementation.
+
+        This class represents a GAN that starts training on low-resolution images and progressively 
+        increases the resolution by adding new layers to the generator and discriminator networks. 
+        This method helps in stabilizing the training process and allows the generation of high-quality images.
+
         Args:
-            depths ([int]):
-            init_resolution_size ((int, int)):
+            depths ([int]): A list of depths that represent the number of channels in each resolution block. 
+                            Each depth corresponds to a specific stage of the 
+                            progressively growing network.
+            negative_slope (float): The negative slope parameter for the LeakyReLU activation function.
+            normalization (bool): If set to True, normalization is applied within the networks. 
+            mini_batch_normalization (bool): If set to True, mini-batch normalization is applied 
+                                         within the networks.
+            init_resolution_size ((int, int)): The initial resolution size at the beginning of the training.
+            num_epochs_per_resolution (int): The number of training epochs for each resolution stage. 
+            n_blocks (int): The number of blocks in the networks, derived from the length of `depths`.
+
         """
         super(PGAN, self).__init__(latent_dim=latent_dim)
 

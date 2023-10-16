@@ -10,7 +10,6 @@ class NormalizationLayer(nn.Module):
     def forward(self, z, epsilon=1e-8):
         return z / torch.sqrt(torch.mean(z ** 2, dim=1, keepdim=True) + epsilon)
 
-
 class PGenerator(nn.Module):
     def __init__(self, 
                  init_depth=256, 
@@ -19,20 +18,27 @@ class PGenerator(nn.Module):
                  scale_factor=2,
                  output_depth=1,
                  LReLU_negative_slope=0.2,
-                 toRGBActivation=None,
                  normalization=True):
+        r"""
+        Args:
+            init_depth (int): Initial depth (number of channels) for the model layers.
+            init_resolution_size (tuple): Initial height and width of the output images for first block.
+            scale_factor (float): The scaling factor for upscaling the image.
+            output_depth (int): Depth (number of channels) of the output images.
+        """
+
+
         super(PGenerator, self).__init__()
 
-        self.init_depth = init_depth # number of channels for first resolution
-        self.output_depth = output_depth # number of output channels
-        self.init_resolution_size = init_resolution_size # 
-        self.scale_factor=scale_factor # parameter for upsampling
+        self.init_depth = init_depth
+        self.output_depth = output_depth
+        self.init_resolution_size = init_resolution_size
+        self.scale_factor=scale_factor
         self.latent_dim = latent_dim
         self.LReLU_negative_slope = LReLU_negative_slope
         self.kernel_size = 3
         self.padding = 1
         self.normalization = normalization
-        self.toRGBActivation=toRGBActivation # funkcja aktywacji dla warsty toRGB, jesli None to uzyjemy identity
 
         self.depths = [init_depth]
 
@@ -190,8 +196,5 @@ class PGenerator(nn.Module):
 
         if self.alpha > 0:
             z = (1.0 - self.alpha * y) + self.alpha * z
-
-        if self.toRGBActivation is not None:
-            z = self.toRGBActivation(z)
 
         return z
