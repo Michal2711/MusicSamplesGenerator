@@ -8,8 +8,7 @@ class BaseGAN(nn.Module):
                  latent_dim=100,
                  output_dim=1,
                  lr=0.0002, 
-                 loss='MSE',
-                 g_activation=None):
+                 loss='MSE'):
 
         r"""
         Base class for Generative Adversarial Networks (GANs).
@@ -30,7 +29,6 @@ class BaseGAN(nn.Module):
         self.latent_dim = latent_dim
         self.output_dim = output_dim
         self.lr = lr
-        self.g_activation = g_activation
         self.writer = SummaryWriter()
 
         if loss not in ['MSE', 'BCE', 'WGAN']:

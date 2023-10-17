@@ -50,7 +50,12 @@ class PGAN(BaseGAN):
         self.alpha = 0
 
         self.generator = self.get_generator().to(self.device)
+        self.generator.apply(self.weights_init)
+        # self.weights_init(self.generator)
+
         self.discriminator = self.get_discriminator().to(self.device)
+        self.discriminator.apply(self.weights_init)
+
         self.optimizer_G = self.get_optimizer_G()
         self.optimizer_D = self.get_optimizer_D()
 
@@ -80,7 +85,12 @@ class PGAN(BaseGAN):
     
     def get_optimizer_D(self):
         return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0, 0.99))
-    
+
+    def weights_init(self, model):
+        for m in model.modules():
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
+                nn.init.normal_(m.weight.data, 0.0, 0.02)
+
     def add_new_block(self, new_depth):
         if type(new_depth) is list:
             self.generator.add_next_block(new_depth[0])
@@ -88,6 +98,11 @@ class PGAN(BaseGAN):
         else:
             self.generator.add_next_block(new_depth)
             self.discriminator.add_next_block(new_depth)
+
+        new_layers_gen = list(self.generator.children())[-1]
+        new_layers_disc = list(self.discriminator.children())[-1]
+        new_layers_gen.apply(self.weights_init)
+        new_layers_disc.apply(self.weights_init)
 
     def update_alpha(self, new_alpha):
         self.generator.set_alpha(new_alpha)
