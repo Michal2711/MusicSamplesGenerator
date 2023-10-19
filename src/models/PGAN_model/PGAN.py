@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import torchvision
+from torch.utils.tensorboard import SummaryWriter
 
 from models.Base_models.BaseGAN import BaseGAN
 from models.PGAN_model.PDiscriminator import PDiscriminator
@@ -12,6 +14,8 @@ class PGAN(BaseGAN):
     def __init__(self,
                  depths,
                  latent_dim=100,
+                 output_dim=1,
+                 lr=0.0002,
                  negative_slope=0.2,
                  normalization=True,
                  mini_batch_normalization=False,
@@ -37,7 +41,7 @@ class PGAN(BaseGAN):
             n_blocks (int): The number of blocks in the networks, derived from the length of `depths`.
 
         """
-        super(PGAN, self).__init__(latent_dim=latent_dim)
+        super(PGAN, self).__init__(latent_dim=latent_dim, output_dim=output_dim, lr=lr)
 
         self.init_depth = depths[0]
         self.depths = depths
@@ -48,6 +52,7 @@ class PGAN(BaseGAN):
         self.num_epochs_per_resolution = num_epochs_per_resolution
         self.n_blocks = len(depths)
         self.alpha = 0
+        self.set_writers()
 
         self.generator = self.get_generator().to(self.device)
         self.generator.apply(self.weights_init)
@@ -86,10 +91,21 @@ class PGAN(BaseGAN):
     def get_optimizer_D(self):
         return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0, 0.99))
 
-    def weights_init(self, model):
-        for m in model.modules():
-            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
-                nn.init.normal_(m.weight.data, 0.0, 0.02)
+    def set_writers(self):
+        self.writer_real = SummaryWriter()
+        self.writer_fake= SummaryWriter()
+        # self.writer_real = SummaryWriter(f"runs/WGAN/images/real")
+        # self.writer_fake= SummaryWriter(f"runs/WGAN/images/fake")
+
+    def flush_ale_writers(self):
+        self.writer.flush()
+        self.writer_real.flush()
+        self.writer_fake.flush()
+
+    def close_all_writers(self):
+        self.writer.close()
+        self.writer_real.close()
+        self.writer_fake.close()
 
     def add_new_block(self, new_depth):
         if type(new_depth) is list:
@@ -176,6 +192,18 @@ class PGAN(BaseGAN):
 
                 print(f"Resolution {resolution} - Epoch {epoch+1}/{num_epochs} - D Loss: {d_loss.item()} - G Loss: {g_loss.item()}")
 
+                with torch.no_grad():
+                    test_noise = self.create_noise(batch_size=b_size)
+                    fake_images = self.generator(test_noise)
+
+                    img_grid_real = torchvision.utils.make_grid(real_images_low_res, normalize=True)
+                    img_grid_fake = torchvision.utils.make_grid(fake_images, normalize=True)
+
+                    self.writer_real.add_image("Real", img_grid_real, global_step=resolution*num_epochs + epoch)
+                    self.writer_fake.add_image("Fake", img_grid_fake, global_step=resolution*num_epochs + epoch)
+
             if resolution < self.n_blocks-1:
                 self.add_new_block(self.depths[resolution+1])
-        self.writer.flush()
+
+        self.flush_ale_writers()
+        # self.close_all_writers()

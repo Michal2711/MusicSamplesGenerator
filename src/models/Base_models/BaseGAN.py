@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
 from abc import abstractmethod
+import numpy as np
+import librosa
+from torchvision.transforms import ToTensor
+from torchvision.utils import make_grid
+import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 
 class BaseGAN(nn.Module):
@@ -76,8 +81,32 @@ class BaseGAN(nn.Module):
         noise = torch.randn(batch_size, self.latent_dim).to(self.device)
         return noise
     
+    def weights_init(self, model):
+        for m in model.modules():
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
+                nn.init.normal_(m.weight.data, 0.0, 0.02)
+
     def close_writer(self):
         self.writer.close()
+        
+    def spectrograms_to_tensor_grid(self, spectrograms):
+        tensors = []
+        
+        for spec in spectrograms:
+            spec = spec.squeeze()
+            fig = plt.figure(figsize=(10, 5))
+            img = librosa.display.specshow(spec, x_axis='time', y_axis='log')
+            plt.colorbar(img, format='%0.2f')
+            plt.axis('off')
+            
+            fig.canvas.draw()
+            img_arr = np.array(fig.canvas.renderer.buffer_rgba())
+            tensors.append(ToTensor()(img_arr))
+            
+            plt.close(fig)
+
+        grid_tensor = make_grid(tensors, normalize=True) 
+        return grid_tensor
 
     def get_model_parameters(self):
 

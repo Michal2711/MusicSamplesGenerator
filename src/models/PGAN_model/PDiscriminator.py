@@ -104,6 +104,8 @@ class PDiscriminator(nn.Module):
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
         ))
 
+        # BatchNorm2d
+        # InstanceNorm2d, set affine to True
         block.append(nn.Sequential(
             nn.Conv2d(
                 in_channels=new_depth,
