@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import torchvision
+from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
 
 from models.Base_models.BaseGAN import BaseGAN
@@ -13,14 +13,12 @@ class PGAN(BaseGAN):
 
     def __init__(self,
                  depths,
-                 latent_dim=100,
-                 output_dim=1,
-                 lr=0.0002,
+                 init_resolution_size=(8, 5),
+                 num_epochs_per_resolution = 10,
                  negative_slope=0.2,
                  normalization=True,
                  mini_batch_normalization=False,
-                 init_resolution_size=(8, 5),
-                 num_epochs_per_resolution = 10):
+                 *args, **kwargs):
         r"""
         Progressive Growing GAN (PGAN) implementation.
 
@@ -41,7 +39,7 @@ class PGAN(BaseGAN):
             n_blocks (int): The number of blocks in the networks, derived from the length of `depths`.
 
         """
-        super(PGAN, self).__init__(latent_dim=latent_dim, output_dim=output_dim, lr=lr)
+        super(PGAN, self).__init__(*args, **kwargs)
 
         self.init_depth = depths[0]
         self.depths = depths
@@ -52,17 +50,17 @@ class PGAN(BaseGAN):
         self.num_epochs_per_resolution = num_epochs_per_resolution
         self.n_blocks = len(depths)
         self.alpha = 0
-        self.set_writers()
 
         self.generator = self.get_generator().to(self.device)
         self.generator.apply(self.weights_init)
-        # self.weights_init(self.generator)
 
         self.discriminator = self.get_discriminator().to(self.device)
         self.discriminator.apply(self.weights_init)
 
         self.optimizer_G = self.get_optimizer_G()
         self.optimizer_D = self.get_optimizer_D()
+
+        self.set_writers()
 
         self.criterion = nn.MSELoss()
 
@@ -92,20 +90,35 @@ class PGAN(BaseGAN):
         return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0, 0.99))
 
     def set_writers(self):
-        self.writer_real = SummaryWriter()
-        self.writer_fake= SummaryWriter()
-        # self.writer_real = SummaryWriter(f"runs/WGAN/images/real")
-        # self.writer_fake= SummaryWriter(f"runs/WGAN/images/fake")
+        current_time = datetime.now().strftime('%Y%m%d-%H%M%S')
+        base_log_dir = f"runs/PGAN/{current_time}"
 
-    def flush_ale_writers(self):
-        self.writer.flush()
-        self.writer_real.flush()
-        self.writer_fake.flush()
+        self.writer_losses = SummaryWriter(log_dir=f"{base_log_dir}/losses")
+        self.writer_image_real = SummaryWriter(log_dir=f"{base_log_dir}/images/real")
+        self.writer_image_fake = SummaryWriter(log_dir=f"{base_log_dir}/images/fake")
+        self.writer_hparams = SummaryWriter(log_dir=f"{base_log_dir}/hparams")
 
-    def close_all_writers(self):
-        self.writer.close()
-        self.writer_real.close()
-        self.writer_fake.close()
+    def add_hparams_to_writer(self, final_d_loss = None, final_g_loss = None):
+        hparams = {
+            'latent_dim': self.latent_dim,
+            'output_dim': self.output_dim,
+            'learning_rate': self.lr,
+            'batch_size': self.batch_size,
+            'depths': f"{self.depths}",
+            'init_resolution_size': f"{self.init_resolution_size}",
+            'num_epochs': len(self.depths) * self.num_epochs_per_resolution,
+            'num_epochs_per_resolution': self.num_epochs_per_resolution,
+            'negative_slope': self.negative_slope,
+            'normalization': self.normalization,
+            'mini_batch_normalization': self.mini_batch_normalization,
+        }
+
+        metrics = {
+            'final_d_loss': final_d_loss,
+            'final_g_loss': final_g_loss
+        }
+        
+        self.writer_hparams.add_hparams(hparams, metrics)
 
     def add_new_block(self, new_depth):
         if type(new_depth) is list:
@@ -178,7 +191,7 @@ class PGAN(BaseGAN):
                     fake_loss.backward()
 
                     d_loss = (real_loss + fake_loss)
-                    self.writer.add_scalar("Loss_discriminator/train", d_loss, global_step=resolution*num_epochs + epoch)
+                    self.writer_losses.add_scalar("Loss_discriminator/train", d_loss, global_step=resolution*num_epochs + epoch)
                     self.optimizer_D.step()
 
                     # 2. Train Generator
@@ -186,7 +199,7 @@ class PGAN(BaseGAN):
                     label = torch.ones((b_size,), dtype=torch.float, device=self.device)
                     output = self.discriminator(fake_images).view(-1)
                     g_loss = self.criterion(output, label)
-                    self.writer.add_scalar("Loss_generator/train", g_loss, global_step=resolution*num_epochs + epoch)
+                    self.writer_losses.add_scalar("Loss_generator/train", g_loss, global_step=resolution*num_epochs + epoch)
                     g_loss.backward()
                     self.optimizer_G.step()
 
@@ -196,14 +209,14 @@ class PGAN(BaseGAN):
                     test_noise = self.create_noise(batch_size=b_size)
                     fake_images = self.generator(test_noise)
 
-                    img_grid_real = torchvision.utils.make_grid(real_images_low_res, normalize=True)
-                    img_grid_fake = torchvision.utils.make_grid(fake_images, normalize=True)
+                    real_tensor_grid = self.spectrograms_to_tensor_grid(real_images_low_res.cpu().numpy())
+                    fake_tensor_grid = self.spectrograms_to_tensor_grid(fake_images.cpu().numpy())
 
-                    self.writer_real.add_image("Real", img_grid_real, global_step=resolution*num_epochs + epoch)
-                    self.writer_fake.add_image("Fake", img_grid_fake, global_step=resolution*num_epochs + epoch)
+                    self.writer_image_real.add_image("Real", real_tensor_grid, global_step=resolution*num_epochs + epoch)
+                    self.writer_image_fake.add_image("Fake", fake_tensor_grid, global_step=resolution*num_epochs + epoch)
 
             if resolution < self.n_blocks-1:
                 self.add_new_block(self.depths[resolution+1])
 
-        self.flush_ale_writers()
-        # self.close_all_writers()
+        self.add_hparams_to_writer(final_d_loss=d_loss.item(), final_g_loss=g_loss.item())
+        self.flush_all_writers()

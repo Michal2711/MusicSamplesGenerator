@@ -13,6 +13,7 @@ class BaseGAN(nn.Module):
                  latent_dim=100,
                  output_dim=1,
                  lr=0.0002, 
+                 batch_size = 32,
                  loss='MSE'):
 
         r"""
@@ -34,7 +35,8 @@ class BaseGAN(nn.Module):
         self.latent_dim = latent_dim
         self.output_dim = output_dim
         self.lr = lr
-        self.writer = SummaryWriter()
+        self.batch_size = batch_size
+        self.set_writers()
 
         if loss not in ['MSE', 'BCE', 'WGAN']:
             raise ValueError(
@@ -86,9 +88,24 @@ class BaseGAN(nn.Module):
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
                 nn.init.normal_(m.weight.data, 0.0, 0.02)
 
-    def close_writer(self):
-        self.writer.close()
-        
+    def set_writers(self):
+        self.writer_losses = SummaryWriter()
+        self.writer_image_real = SummaryWriter()
+        self.writer_image_fake = SummaryWriter()
+        self.writer_hparams = SummaryWriter() 
+
+    def flush_all_writers(self):
+        self.writer_losses.flush()
+        self.writer_image_real.flush()
+        self.writer_image_fake.flush()
+        self.writer_hparams.flush()
+
+    def close_all_writers(self):
+        self.writer_losses.close()
+        self.writer_image_real.close()
+        self.writer_image_fake.close()
+        self.writer_hparams.close()
+
     def spectrograms_to_tensor_grid(self, spectrograms):
         tensors = []
         
