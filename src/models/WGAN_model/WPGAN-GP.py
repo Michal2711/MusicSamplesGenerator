@@ -6,15 +6,15 @@ from models.PGAN_model.PGAN import PGAN
 from models.utils import gradient_penalty
 
 class WGAN(PGAN):
-    def __init__(self, c, n_critic, lambda_gp, *args, **kwargs):
+    def __init__(self, n_critic, lambda_gp, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.c = c
         self.n_critic = n_critic
         self.lambda_gp = lambda_gp
         self.optimizer_G = self.get_optimizer_G()
         self.optimizer_D = self.get_optimizer_D()
 
+        self.set_writers("runs/WPGAN-GP")
 
     def get_optimizer_G(self):
         return optim.Adam(self.generator.parameters(), lr=self.lr, betas=(0.0, 0.9))
@@ -22,14 +22,40 @@ class WGAN(PGAN):
     def get_optimizer_D(self):
         return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0.0, 0.9))
     
-    def train(self, dataloader, fade_in_percentage=0.5):
+    def add_hparams_to_writer(self, final_d_loss = None, final_g_loss = None):
+        hparams = {
+            'latent_dim': self.latent_dim,
+            'output_dim': self.output_dim,
+            'learning_rate': self.lr,
+            'batch_size': self.batch_size,
+            'loss': self.loss,
+            'depths': f"{self.depths}",
+            'init_resolution_size': f"{self.init_resolution_size}",
+            'num_epochs': len(self.depths) * self.num_epochs_per_resolution,
+            'num_epochs_per_resolution': self.num_epochs_per_resolution,
+            'negative_slope': self.negative_slope,
+            'fade_in': self.fade_in_percentage,
+            'normalization': self.normalization,
+            'mini_batch_normalization': self.mini_batch_normalization,
+            'lambda_gp': self.lambda_gp,
+            'n_critic': self.n_critic
+        }
+
+        metrics = {
+            'final_d_loss': final_d_loss,
+            'final_g_loss': final_g_loss
+        }
+        
+        self.writer_hparams.add_hparams(hparams, metrics)
+
+    def train(self, dataloader):
         for resolution in range(self.n_blocks):
 
             if type(self.num_epochs_per_resolution) is list:
-                fade_epochs = int(self.num_epochs_per_resolution[resolution] * fade_in_percentage)
+                fade_epochs = int(self.num_epochs_per_resolution[resolution] * self.fade_in_percentage)
                 num_epochs = self.num_epochs_per_resolution[resolution]
             else:
-                fade_epochs = int(self.num_epochs_per_resolution * fade_in_percentage)
+                fade_epochs = int(self.num_epochs_per_resolution * self.fade_in_percentage)
                 num_epochs = self.num_epochs_per_resolution
 
             for epoch in range(num_epochs):
@@ -74,6 +100,11 @@ class WGAN(PGAN):
 
             if resolution < self.n_blocks-1:
                 self.add_new_block(self.depths[resolution+1])
-        self.writer.flush()
+        
+        self.add_hparams_to_writer(final_d_loss=d_loss.item(), final_g_loss=g_loss.item())
+        spectrograms = next(iter(dataloader))
+        spectrograms = spectrograms.to(self.device)
+        self.add_models_to_writer(spectrograms)
+        self.flush_all_writers()
 
     

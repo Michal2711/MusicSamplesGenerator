@@ -16,6 +16,7 @@ class PGAN(BaseGAN):
                  init_resolution_size=(8, 5),
                  num_epochs_per_resolution = 10,
                  negative_slope=0.2,
+                 fade_in_percentage=0.5,
                  normalization=True,
                  mini_batch_normalization=False,
                  *args, **kwargs):
@@ -44,6 +45,7 @@ class PGAN(BaseGAN):
         self.init_depth = depths[0]
         self.depths = depths
         self.negative_slope = negative_slope
+        self.fade_in_percentage = fade_in_percentage
         self.normalization = normalization
         self.mini_batch_normalization = mini_batch_normalization
         self.init_resolution_size = init_resolution_size
@@ -57,12 +59,12 @@ class PGAN(BaseGAN):
         self.discriminator = self.get_discriminator().to(self.device)
         self.discriminator.apply(self.weights_init)
 
-        self.optimizer_G = self.get_optimizer_G()
-        self.optimizer_D = self.get_optimizer_D()
-
-        self.set_writers()
-
-        self.criterion = nn.MSELoss()
+        if self.loss != 'WGAN':
+            self.optimizer_G = self.get_optimizer_G()
+            self.optimizer_D = self.get_optimizer_D()
+            
+            self.set_writers("runs/PGAN")
+            self.criterion = nn.MSELoss()
 
     def get_generator(self):
         generator = PGenerator(
@@ -89,26 +91,19 @@ class PGAN(BaseGAN):
     def get_optimizer_D(self):
         return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0, 0.99))
 
-    def set_writers(self):
-        current_time = datetime.now().strftime('%Y%m%d-%H%M%S')
-        base_log_dir = f"runs/PGAN/{current_time}"
-
-        self.writer_losses = SummaryWriter(log_dir=f"{base_log_dir}/losses")
-        self.writer_image_real = SummaryWriter(log_dir=f"{base_log_dir}/images/real")
-        self.writer_image_fake = SummaryWriter(log_dir=f"{base_log_dir}/images/fake")
-        self.writer_hparams = SummaryWriter(log_dir=f"{base_log_dir}/hparams")
-
     def add_hparams_to_writer(self, final_d_loss = None, final_g_loss = None):
         hparams = {
             'latent_dim': self.latent_dim,
             'output_dim': self.output_dim,
             'learning_rate': self.lr,
             'batch_size': self.batch_size,
+            'loss': self.loss,
             'depths': f"{self.depths}",
             'init_resolution_size': f"{self.init_resolution_size}",
             'num_epochs': len(self.depths) * self.num_epochs_per_resolution,
             'num_epochs_per_resolution': self.num_epochs_per_resolution,
             'negative_slope': self.negative_slope,
+            'fade_in': self.fade_in_percentage,
             'normalization': self.normalization,
             'mini_batch_normalization': self.mini_batch_normalization,
         }
@@ -119,6 +114,12 @@ class PGAN(BaseGAN):
         }
         
         self.writer_hparams.add_hparams(hparams, metrics)
+
+    def add_models_to_writer(self, spectrograms):
+        noise = self.create_noise(batch_size=self.batch_size)
+        noise = noise.to(self.device)
+        self.writer_gen_model.add_graph(self.generator, noise)
+        self.writer_disc_model.add_graph(self.discriminator, spectrograms)
 
     def add_new_block(self, new_depth):
         if type(new_depth) is list:
@@ -151,14 +152,14 @@ class PGAN(BaseGAN):
         else:
             return out.detach().cpu()
         
-    def train(self, dataloader, fade_in_percentage=0.5):
+    def train(self, dataloader):
         for resolution in range(self.n_blocks):
 
             if type(self.num_epochs_per_resolution) is list:
-                fade_epochs = int(self.num_epochs_per_resolution[resolution] * fade_in_percentage)
+                fade_epochs = int(self.num_epochs_per_resolution[resolution] * self.fade_in_percentage)
                 num_epochs = self.num_epochs_per_resolution[resolution]
             else:
-                fade_epochs = int(self.num_epochs_per_resolution * fade_in_percentage)
+                fade_epochs = int(self.num_epochs_per_resolution * self.fade_in_percentage)
                 num_epochs = self.num_epochs_per_resolution
 
             for epoch in range(num_epochs):
@@ -219,4 +220,7 @@ class PGAN(BaseGAN):
                 self.add_new_block(self.depths[resolution+1])
 
         self.add_hparams_to_writer(final_d_loss=d_loss.item(), final_g_loss=g_loss.item())
+        spectrograms = next(iter(dataloader))
+        spectrograms = spectrograms.to(self.device)
+        self.add_models_to_writer(spectrograms)
         self.flush_all_writers()

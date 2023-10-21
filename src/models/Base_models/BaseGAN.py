@@ -3,6 +3,7 @@ import torch.nn as nn
 from abc import abstractmethod
 import numpy as np
 import librosa
+from datetime import datetime
 from torchvision.transforms import ToTensor
 from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
@@ -36,7 +37,7 @@ class BaseGAN(nn.Module):
         self.output_dim = output_dim
         self.lr = lr
         self.batch_size = batch_size
-        self.set_writers()
+        self.loss = loss
 
         if loss not in ['MSE', 'BCE', 'WGAN']:
             raise ValueError(
@@ -88,23 +89,32 @@ class BaseGAN(nn.Module):
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
                 nn.init.normal_(m.weight.data, 0.0, 0.02)
 
-    def set_writers(self):
-        self.writer_losses = SummaryWriter()
-        self.writer_image_real = SummaryWriter()
-        self.writer_image_fake = SummaryWriter()
-        self.writer_hparams = SummaryWriter() 
+    def set_writers(self, base_log_dir):
+        current_time = datetime.now().strftime('%Y%m%d-%H%M%S')
+        base_log_dir = f'{base_log_dir}/{current_time}'
+
+        self.writer_losses = SummaryWriter(log_dir=f"{base_log_dir}/losses")
+        self.writer_image_real = SummaryWriter(log_dir=f"{base_log_dir}/images/real")
+        self.writer_image_fake = SummaryWriter(log_dir=f"{base_log_dir}/images/fake")
+        self.writer_hparams = SummaryWriter(log_dir=f"{base_log_dir}/hparams")
+        self.writer_gen_model = SummaryWriter(log_dir=f"{base_log_dir}/models/gen")
+        self.writer_disc_model = SummaryWriter(log_dir=f"{base_log_dir}/models/disc")
 
     def flush_all_writers(self):
         self.writer_losses.flush()
         self.writer_image_real.flush()
         self.writer_image_fake.flush()
         self.writer_hparams.flush()
+        self.writer_gen_model.flush()
+        self.writer_disc_model.flush()
 
     def close_all_writers(self):
         self.writer_losses.close()
         self.writer_image_real.close()
         self.writer_image_fake.close()
         self.writer_hparams.close()
+        self.writer_gen_model.close()
+        self.writer_disc_model.close()
 
     def spectrograms_to_tensor_grid(self, spectrograms):
         tensors = []

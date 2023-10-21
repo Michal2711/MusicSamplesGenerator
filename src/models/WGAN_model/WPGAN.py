@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from models.PGAN_model.PGAN import PGAN
 
-class WGAN(PGAN):
+class WPGAN(PGAN):
     def __init__(self, c, n_critic, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -15,34 +15,27 @@ class WGAN(PGAN):
         self.optimizer_G = self.get_optimizer_G()
         self.optimizer_D = self.get_optimizer_D()
 
-        self.set_writers()
+        self.set_writers("runs/WPGAN")
 
     def get_optimizer_G(self):
         return optim.RMSprop(self.generator.parameters(), lr=self.lr)
     
     def get_optimizer_D(self):
         return optim.RMSprop(self.discriminator.parameters(), lr=self.lr)
-
-    def set_writers(self):
-        current_time = datetime.now().strftime('%Y%m%d-%H%M%S')
-        base_log_dir = f"runs/WPGAN/{current_time}"
-
-        self.writer_losses = SummaryWriter(log_dir=f"{base_log_dir}/losses")
-        self.writer_image_real = SummaryWriter(log_dir=f"{base_log_dir}/images/real")
-        self.writer_image_fake = SummaryWriter(log_dir=f"{base_log_dir}/images/fake")
-        self.writer_hparams = SummaryWriter(log_dir=f"{base_log_dir}/hparams")
-
+    
     def add_hparams_to_writer(self, final_d_loss = None, final_g_loss = None):
         hparams = {
             'latent_dim': self.latent_dim,
             'output_dim': self.output_dim,
             'learning_rate': self.lr,
             'batch_size': self.batch_size,
+            'loss': self.loss,
             'depths': f"{self.depths}",
             'init_resolution_size': f"{self.init_resolution_size}",
             'num_epochs': len(self.depths) * self.num_epochs_per_resolution,
             'num_epochs_per_resolution': self.num_epochs_per_resolution,
             'negative_slope': self.negative_slope,
+            'fade_in': self.fade_in_percentage,
             'normalization': self.normalization,
             'mini_batch_normalization': self.mini_batch_normalization,
             'c': self.c,
@@ -56,14 +49,14 @@ class WGAN(PGAN):
         
         self.writer_hparams.add_hparams(hparams, metrics)
 
-    def train(self, dataloader, fade_in_percentage=0.5):
+    def train(self, dataloader):
         for resolution in range(self.n_blocks):
 
             if type(self.num_epochs_per_resolution) is list:
-                fade_epochs = int(self.num_epochs_per_resolution[resolution] * fade_in_percentage)
+                fade_epochs = int(self.num_epochs_per_resolution[resolution] * self.fade_in_percentage)
                 num_epochs = self.num_epochs_per_resolution[resolution]
             else:
-                fade_epochs = int(self.num_epochs_per_resolution * fade_in_percentage)
+                fade_epochs = int(self.num_epochs_per_resolution * self.fade_in_percentage)
                 num_epochs = self.num_epochs_per_resolution
 
             for epoch in range(num_epochs):
@@ -124,5 +117,8 @@ class WGAN(PGAN):
                 self.add_new_block(self.depths[resolution+1])
 
         self.add_hparams_to_writer(final_d_loss=d_loss.item(), final_g_loss=g_loss.item())
+        spectrograms = next(iter(dataloader))
+        spectrograms = spectrograms.to(self.device)
+        self.add_models_to_writer(spectrograms)
         self.flush_all_writers()
    
