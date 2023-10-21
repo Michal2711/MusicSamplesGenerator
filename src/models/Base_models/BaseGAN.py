@@ -4,6 +4,7 @@ from abc import abstractmethod
 import numpy as np
 import librosa
 from datetime import datetime
+import os
 from torchvision.transforms import ToTensor
 from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
@@ -38,6 +39,8 @@ class BaseGAN(nn.Module):
         self.lr = lr
         self.batch_size = batch_size
         self.loss = loss
+        self.checkpoint_dir = ""
+        self.model_save_dir = ""
 
         if loss not in ['MSE', 'BCE', 'WGAN']:
             raise ValueError(
@@ -134,23 +137,51 @@ class BaseGAN(nn.Module):
 
         grid_tensor = make_grid(tensors, normalize=True) 
         return grid_tensor
+    
+    def create_dir_for_saving(self, current_dir, model):
+        self.checkpoint_dir = os.path.join(current_dir, "checkpoints")
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+        self.model_save_dir = f"../../../models/saved_models/{model}/"
+        self.model_save_dir = os.path.join(current_dir, self.model_save_dir)
+        os.makedirs(self.model_save_dir, exist_ok=True)
 
-    def get_model_parameters(self):
+    def save_checkpoint(self, model, resolution, epoch):
+        checkpoint_name = f"{model}_checkpoint_res{resolution}_epoch{epoch}.pth"
+        checkpoint_path = os.path.join(self.checkpoint_dir, checkpoint_name)
 
-        generator_params = self.generator.state_dict()
-        discriminator_params = self.discriminator.state_dict()
+        torch.save({
+            'generator_state_dict': self.generator.state_dict(),
+            'discriminator_state_dict': self.discriminator.state_dict(),
+            'optimizer_G_state_dict': self.optimizer_G.state_dict(),
+            'optimizer_D_state_dict': self.optimizer_D.state_dict(),
+            'epoch': epoch,
+            'resolution': resolution,
+        }, checkpoint_path)
 
-        model_params = {
-            'generator': generator_params,
-            'discriminator': discriminator_params
-        }
-        return model_params
+        print(f"Checkpoint saved: {checkpoint_path}")
 
-    def save(self, path):
-        torch.save(self.get_model_parameters(), path)
+    def load_checkpoint(self, checkpoint_path):
+        checkpoint = torch.load(checkpoint_path)
 
-    def load(self, path):
-        state = torch.load(path, map_location=self.device)
+        self.generator.load_state_dict(checkpoint['generator_state_dict'])
+        self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+        self.optimizer_G.load_state_dict(checkpoint['optimizer_G_state_dict'])
+        self.optimizer_D.load_state_dict(checkpoint['optimizer_D_state_dict'])
 
-        self.generator.load_state_dict(state['generator'])
-        self.discriminator.load_state_dict(state['discriminator'])
+        epoch = checkpoint['epoch']
+        resolution = checkpoint['resolution']
+
+        return epoch, resolution
+
+    def save_full_model(self, model_name):
+        model_path = os.path.join(self.model_save_dir, model_name)
+
+        torch.save({
+            'generator': self.generator,
+            'discriminator': self.discriminator,
+            'optimizer_G_state_dict': self.get_optimizer_G().state_dict(),
+            'optimizer_D_state_dict': self.get_optimizer_D().state_dict(),
+        }, model_path)
+
+        print(f'Full model saved: {model_path}')

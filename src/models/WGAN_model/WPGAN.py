@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-from datetime import datetime
+import os
 from torch.utils.tensorboard import SummaryWriter
 
 from models.PGAN_model.PGAN import PGAN
@@ -14,6 +14,9 @@ class WPGAN(PGAN):
         self.n_critic = n_critic
         self.optimizer_G = self.get_optimizer_G()
         self.optimizer_D = self.get_optimizer_D()
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.create_dir_for_saving(current_dir=current_dir, model="WPGAN")
 
         self.set_writers("runs/WPGAN")
 
@@ -49,8 +52,17 @@ class WPGAN(PGAN):
         
         self.writer_hparams.add_hparams(hparams, metrics)
 
-    def train(self, dataloader):
-        for resolution in range(self.n_blocks):
+    def train(self, dataloader, checkpoint_path=None):
+
+        save_interval = 2
+        if checkpoint_path is not None:
+            epoch, resolution = self.load_checkpoint(checkpoint_path=checkpoint_path)
+            print(f'Resuming training from epoch {epoch} at resolution {resolution}')
+        else:
+            epoch = 0
+            resolution = 0
+
+        for resolution in range(resolution, self.n_blocks):
 
             if type(self.num_epochs_per_resolution) is list:
                 fade_epochs = int(self.num_epochs_per_resolution[resolution] * self.fade_in_percentage)
@@ -59,7 +71,7 @@ class WPGAN(PGAN):
                 fade_epochs = int(self.num_epochs_per_resolution * self.fade_in_percentage)
                 num_epochs = self.num_epochs_per_resolution
 
-            for epoch in range(num_epochs):
+            for epoch in range(epoch, num_epochs):
                 if resolution > 0:
                     if epoch < fade_epochs:
                         self.update_alpha((epoch+1)/ fade_epochs)
@@ -103,6 +115,9 @@ class WPGAN(PGAN):
 
                 print(f"Resolution {resolution} - Epoch {epoch+1}/{num_epochs} - D Loss: {d_loss.item()} - G Loss: {g_loss.item()}")
 
+                if (epoch + 1) % save_interval == 0:
+                    self.save_checkpoint(model="WPGAN", resolution=resolution, epoch=epoch+1)
+
                 with torch.no_grad():
                     test_noise = self.create_noise(batch_size=b_size)
                     fake_images = self.generator(test_noise)
@@ -113,6 +128,7 @@ class WPGAN(PGAN):
                     self.writer_image_real.add_image("Real", real_tensor_grid, global_step=resolution*num_epochs + epoch)
                     self.writer_image_fake.add_image("Fake", fake_tensor_grid, global_step=resolution*num_epochs + epoch)
 
+            epoch = 0
             if resolution < self.n_blocks-1:
                 self.add_new_block(self.depths[resolution+1])
 

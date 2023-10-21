@@ -27,6 +27,6 @@ c = 0.01
 # beta1 = 0.5
 
 # dataset
-# base_directory = "../data/raw/Bass"
+base_directory = "../data/raw/Bass"
 # base_directory = "../data/raw/nsynth-train/audio"
-base_directory = "../data/raw/Bass-train"
+# base_directory = "../data/raw/Bass-train"
