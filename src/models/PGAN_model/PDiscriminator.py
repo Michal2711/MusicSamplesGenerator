@@ -1,6 +1,8 @@
 import torch.nn as nn
 import torch
 
+from models.utils import miniBatchStdDev
+
 class PDiscriminator(nn.Module):
     def __init__(self,
                  init_depth=256,
@@ -28,7 +30,7 @@ class PDiscriminator(nn.Module):
         self.LReLU_negative_slope = LReLU_negative_slope
         self.input_depth = input_depth
         self.last_layer_size = last_layer_size
-        self.mini_batch_normalziation = mini_batch_normalization
+        self.mini_batch_normalization = mini_batch_normalization
         self.kernel_size = 3
         self.padding = 1
         self.normalization = normalization
@@ -56,7 +58,7 @@ class PDiscriminator(nn.Module):
 
     def init_last_block(self):
         first_depth = self.init_depth
-        if self.mini_batch_normalziation:
+        if self.mini_batch_normalization:
             first_depth += 1
 
         self.base_block = nn.ModuleList()
@@ -179,8 +181,9 @@ class PDiscriminator(nn.Module):
                 bonding = False
                 z = self.alpha * z + ( 1 - self.alpha) * y
 
-        # TODO
         # minibatch standard deviation
+        if self.mini_batch_normalization:
+            z = miniBatchStdDev(z)
 
         if len(self.blocks) == 0:
             z = self.base_block[0](z)

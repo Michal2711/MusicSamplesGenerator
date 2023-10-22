@@ -6,6 +6,7 @@ output_dim=1
 learning_rate = 2e-3
 loss = 'MSE'
 batch_size = 64
+gpu = True
 
 # PGAN parameters
 depths = [256, 256, 128, 64, 32, 16]
@@ -14,11 +15,12 @@ num_epochs = 60
 num_epochs_per_resolution = int(num_epochs / len(depths))
 negative_slope = 0.2
 fade_in_percentage = 0.5
+save_interval = 2
 
 normalization = True
-mini_batch_normalization = False
+mini_batch_normalization = True
 
 # dataset
-base_directory = "../data/raw/Bass"
+# base_directory = "../data/raw/Bass"
 # base_directory = "../data/raw/nsynth-train/audio"
-# base_directory = "../data/raw/Bass-train"
+base_directory = "../data/raw/Bass-train"

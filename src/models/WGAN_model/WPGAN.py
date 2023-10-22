@@ -33,6 +33,7 @@ class WPGAN(PGAN):
             'learning_rate': self.lr,
             'batch_size': self.batch_size,
             'loss': self.loss,
+            'gpu': self.gpu,
             'depths': f"{self.depths}",
             'init_resolution_size': f"{self.init_resolution_size}",
             'num_epochs': len(self.depths) * self.num_epochs_per_resolution,
@@ -54,7 +55,6 @@ class WPGAN(PGAN):
 
     def train(self, dataloader, checkpoint_path=None):
 
-        save_interval = 2
         if checkpoint_path is not None:
             epoch, resolution = self.load_checkpoint(checkpoint_path=checkpoint_path)
             print(f'Resuming training from epoch {epoch} at resolution {resolution}')
@@ -115,7 +115,7 @@ class WPGAN(PGAN):
 
                 print(f"Resolution {resolution} - Epoch {epoch+1}/{num_epochs} - D Loss: {d_loss.item()} - G Loss: {g_loss.item()}")
 
-                if (epoch + 1) % save_interval == 0:
+                if (epoch + 1) % self.save_interval == 0:
                     self.save_checkpoint(model="WPGAN", resolution=resolution, epoch=epoch+1)
 
                 with torch.no_grad():

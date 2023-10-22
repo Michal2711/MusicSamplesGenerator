@@ -16,7 +16,8 @@ class BaseGAN(nn.Module):
                  output_dim=1,
                  lr=0.0002, 
                  batch_size = 32,
-                 loss='MSE'):
+                 loss='MSE',
+                 gpu=True):
 
         r"""
         Base class for Generative Adversarial Networks (GANs).
@@ -39,6 +40,7 @@ class BaseGAN(nn.Module):
         self.lr = lr
         self.batch_size = batch_size
         self.loss = loss
+        self.gpu = gpu
         self.checkpoint_dir = ""
         self.model_save_dir = ""
 
@@ -50,7 +52,7 @@ class BaseGAN(nn.Module):
         self.set_device()
 
     def set_device(self):
-        if torch.cuda.is_available():
+        if self.gpu and torch.cuda.is_available():
             self.device = torch.device("cuda:0")
             self.n_devices = torch.cuda.device_count()
         else:

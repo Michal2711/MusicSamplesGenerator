@@ -102,7 +102,9 @@ class PGenerator(nn.Module):
                 padding=self.padding
             ),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
-            # self.normalizationLayer(),
+        ))
+
+        block.append(nn.Sequential(           
             nn.ConvTranspose2d(
                 in_channels=new_depth,
                 out_channels=new_depth,
@@ -180,19 +182,22 @@ class PGenerator(nn.Module):
 
         for block_number, block in enumerate(self.blocks, 0):
             z = block[0](z)
-            # TODO tu jeszcze przed drugim conv powinno byc norm
+            if self.normalizationLayer is not None:
+                z = self.normalizationLayer(z)
+
+            z = block[1](z)
             if self.normalizationLayer is not None:
                 z = self.normalizationLayer(z)
 
             if self.alpha == 0 and block_number == (len(self.blocks)-1):
-                z = block[1](z)
+                z = block[2](z)
 
             if self.alpha > 0:
                 if block_number == (len(self.blocks)-2):
                     y = self.upsampling(z)
-                    y = block[1](y)
+                    y = block[2](y)
                 elif block_number == (len(self.blocks)-1):
-                    z = block[1](z)
+                    z = block[2](z)
 
         if self.alpha > 0:
             z = (1.0 - self.alpha * y) + self.alpha * z

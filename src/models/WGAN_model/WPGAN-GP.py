@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from models.PGAN_model.PGAN import PGAN
 from models.utils import gradient_penalty
 
-class WGAN(PGAN):
+class WPGAN_GP(PGAN):
     def __init__(self, n_critic, lambda_gp, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
