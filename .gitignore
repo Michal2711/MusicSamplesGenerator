@@ -80,7 +80,7 @@ target/
 
 /notebooks/runs/
 /src/models/PGAN_model/checkpoints/
-/src/models/WPGAN_model/checkpoint/
+/src/models/WPGAN_model/checkpoints/
 /models/saved/models/
 
 # Mac OS-specific storage files
