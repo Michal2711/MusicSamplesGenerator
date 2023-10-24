@@ -67,7 +67,7 @@ class PGAN(BaseGAN):
             self.optimizer_G = self.get_optimizer_G()
             self.optimizer_D = self.get_optimizer_D()
             
-            # self.set_writers("runs/PGAN")
+            self.set_writers("runs/PGAN")
             self.criterion = nn.MSELoss()
 
     def get_generator(self):
@@ -205,7 +205,7 @@ class PGAN(BaseGAN):
                     fake_loss.backward()
 
                     d_loss = (real_loss + fake_loss)
-                    # self.writer_losses.add_scalar("Loss_discriminator/train", d_loss, global_step=resolution*num_epochs + epoch)
+                    self.writer_losses.add_scalar("Loss_discriminator/train", d_loss, global_step=resolution*num_epochs + epoch)
                     self.optimizer_D.step()
 
                     # 2. Train Generator
@@ -213,7 +213,7 @@ class PGAN(BaseGAN):
                     label = torch.ones((b_size,), dtype=torch.float, device=self.device)
                     output = self.discriminator(fake_images).view(-1)
                     g_loss = self.criterion(output, label)
-                    # self.writer_losses.add_scalar("Loss_generator/train", g_loss, global_step=resolution*num_epochs + epoch)
+                    self.writer_losses.add_scalar("Loss_generator/train", g_loss, global_step=resolution*num_epochs + epoch)
                     g_loss.backward()
                     self.optimizer_G.step()
 
@@ -222,22 +222,22 @@ class PGAN(BaseGAN):
                 if (epoch + 1) % self.save_interval == 0:
                     self.save_checkpoint(model="PGAN", resolution=resolution, epoch=epoch+1)
 
-                # with torch.no_grad():
-                #     test_noise = self.create_noise(batch_size=b_size)
-                #     fake_images = self.generator(test_noise)
+                with torch.no_grad():
+                    test_noise = self.create_noise(batch_size=b_size)
+                    fake_images = self.generator(test_noise)
 
-                #     real_tensor_grid = self.spectrograms_to_tensor_grid(real_images_low_res.cpu().numpy())
-                #     fake_tensor_grid = self.spectrograms_to_tensor_grid(fake_images.cpu().numpy())
+                    real_tensor_grid = self.spectrograms_to_tensor_grid(real_images_low_res.cpu().numpy())
+                    fake_tensor_grid = self.spectrograms_to_tensor_grid(fake_images.cpu().numpy())
 
-                #     self.writer_image_real.add_image("Real", real_tensor_grid, global_step=resolution*num_epochs + epoch)
-                #     self.writer_image_fake.add_image("Fake", fake_tensor_grid, global_step=resolution*num_epochs + epoch)
+                    self.writer_image_real.add_image("Real", real_tensor_grid, global_step=resolution*num_epochs + epoch)
+                    self.writer_image_fake.add_image("Fake", fake_tensor_grid, global_step=resolution*num_epochs + epoch)
 
             epoch = 0
             if resolution < self.n_blocks-1:
                 self.add_new_block(self.depths[resolution+1])
 
-        # self.add_hparams_to_writer(final_d_loss=d_loss.item(), final_g_loss=g_loss.item())
-        # spectrograms = next(iter(dataloader))
-        # spectrograms = spectrograms.to(self.device)
-        # self.add_models_to_writer(spectrograms)
-        # self.flush_all_writers()
+        self.add_hparams_to_writer(final_d_loss=d_loss.item(), final_g_loss=g_loss.item())
+        spectrograms = next(iter(dataloader))
+        spectrograms = spectrograms.to(self.device)
+        self.add_models_to_writer(spectrograms)
+        self.flush_all_writers()
