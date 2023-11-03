@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+import torch.nn.functional as F
 
 from models.utils import miniBatchStdDev
 
@@ -82,6 +83,7 @@ class PDiscriminator(nn.Module):
                     kernel_size=self.kernel_size,
                     padding=self.padding
                 ),
+                nn.BatchNorm2d(self.init_depth),
                 nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
             )
         )
@@ -115,6 +117,7 @@ class PDiscriminator(nn.Module):
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
+            nn.BatchNorm2d(new_depth),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
             nn.Conv2d(
                 in_channels=new_depth,
@@ -122,8 +125,8 @@ class PDiscriminator(nn.Module):
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
+            nn.BatchNorm2d(last_depth),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
-            nn.Upsample(scale_factor=self.scale_factor, mode='nearest') # downsampling
         ))
 
         return block
@@ -137,7 +140,7 @@ class PDiscriminator(nn.Module):
         new_block = new_block.to(device=current_device)
 
         self.blocks.append(new_block)
-    
+
     def set_alpha(self, new_alpha):
         if new_alpha < 0 or new_alpha > 1:
             raise ValueError("New alpha must be in [0, 1]")
@@ -147,9 +150,9 @@ class PDiscriminator(nn.Module):
 
         self.alpha = new_alpha
 
-    def downsampling(self, z):
-        downsample = nn.Upsample(scale_factor=self.scale_factor, mode='nearest') # downsampling
-        return downsample(z)
+    def downsampling(self, z, size):
+        return F.interpolate(z, size=size, mode='nearest')
+        # return F.adaptive_avg_pool2d(z, output_size=size)
 
     def reshape(self, z):
         if len(z.size()) == 4:
@@ -162,8 +165,11 @@ class PDiscriminator(nn.Module):
         return z.view(-1, reshape_size)
 
     def forward(self, z):
-        if self.alpha > 0 and self.alpha < 1 and len(self.blocks) > 0:
-            y = self.downsampling(z)
+        if len(self.blocks) == 0:
+            z = self.base_block[0](z)
+
+        if self.alpha < 1 and len(self.blocks) > 0:
+            y = self.downsampling(z, size=(z.shape[-2]//2, z.shape[-1]//2))
             if len(self.blocks) == 1:
                 y = self.base_block[0](y)
             else:
@@ -176,21 +182,20 @@ class PDiscriminator(nn.Module):
             if reversed_block_number == 0:
                 z = block[0](z)
             z = block[1](z)
+            z = self.downsampling(z, size=(z.shape[-2]//2, z.shape[-1]//2))
 
             if bonding:
                 bonding = False
-                z = self.alpha * z + ( 1 - self.alpha) * y
+                z = self.alpha * z + (( 1.0 - self.alpha) * y)
 
-        # minibatch standard deviation
         if self.mini_batch_normalization:
             z = miniBatchStdDev(z)
-
-        if len(self.blocks) == 0:
-            z = self.base_block[0](z)
-
         z = self.base_block[1](z)
         z = self.reshape(z)
         z= self.base_block[2](z)
         out = self.last_layer(z)
+
+        # sigm = nn.Sigmoid()
+        # out = sigm(out)
 
         return out

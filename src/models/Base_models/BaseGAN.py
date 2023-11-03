@@ -78,21 +78,48 @@ class BaseGAN(nn.Module):
     @abstractmethod
     def train(self):
         pass
-
-    def get_generator(self):
-        return self.generator
-
-    def get_discriminator(self):
-        return self.discriminator
     
     def create_noise(self, batch_size):
         noise = torch.randn(batch_size, self.latent_dim).to(self.device)
         return noise
-    
-    def weights_init(self, model):
-        for m in model.modules():
-            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
-                nn.init.normal_(m.weight.data, 0.0, 0.02)
+
+    def weights_init_he(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in', nonlinearity='leaky_relu')
+        elif classname.find('Linear') != -1:
+            nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in', nonlinearity='leaky_relu')
+            nn.init.zeros_(m.bias)
+        elif classname.find('BatchNorm2d') != -1:
+            nn.init.normal_(m.weight, 1.0, 0.02)
+            nn.init.zeros_(m.bias)
+
+    def weights_init(self, m):
+        # classname = m.__class__.__name__
+        # if classname.find('Conv') != -1:
+        #     nn.init.normal_(m.weight.data, 0.0, 0.02)
+        # elif classname.find('BatchNorm') != -1:
+        #     nn.init.normal_(m.weight.data, 1.0, 0.02)
+        #     nn.init.constant_(m.bias.data, 0)
+        # for m in model.modules():
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif classname.find('BatchNorm') != -1:
+            nn.init.normal_(m.weight.data, 1.0, 0.02)
+            nn.init.constant_(m.bias.data, 0)
+            # if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
+            #     nn.init.normal_(m.weight.data, 0.0, 0.02)
+
+    def update_solvers_device(self):
+        self.discriminator.to(self.device)
+        self.generator.to(self.device)
+
+        self.optimizer_D = self.get_optimizer_D()
+        self.optimizer_G = self.get_optimizer_G()
+
+        self.optimizer_D.zero_grad()
+        self.optimizer_G.zero_grad()
 
     def set_writers(self, base_log_dir):
         current_time = datetime.now().strftime('%Y%m%d-%H%M%S')

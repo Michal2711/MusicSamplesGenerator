@@ -40,7 +40,8 @@ class Pipeline():
             self.fade,
             self.normalization,
             self.stft,
-            self.transform_to_torch
+            self.transform_to_torch,
+            self.cut
         ]
 
         self.post_pipeline = [
@@ -176,7 +177,7 @@ class Pipeline():
             n_fft=getattr(self, 'n_fft', 1024),
             hop_length=getattr(self, 'hop_length', 512),
             win_length=getattr(self, 'win_length', 1024)
-        )
+        )[:-1, :]
     
     def istft(self, stft_spec):
         return librosa.core.istft(

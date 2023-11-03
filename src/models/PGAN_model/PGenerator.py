@@ -3,7 +3,6 @@ import torch
 import torch.nn.functional as F
 
 class NormalizationLayer(nn.Module):
-
     def __init__(self):
         super(NormalizationLayer, self).__init__()
 
@@ -77,6 +76,7 @@ class PGenerator(nn.Module):
                     kernel_size=self.kernel_size,
                     padding=self.padding
                 ),
+                nn.BatchNorm2d(self.depths[0]),
                 nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
             )
         )
@@ -94,13 +94,14 @@ class PGenerator(nn.Module):
     def create_block(self, last_depth, new_depth):
         block = nn.ModuleList()
         block.append(nn.Sequential(
-            nn.Upsample(scale_factor=self.scale_factor, mode='nearest'),
+            # nn.Upsample(scale_factor=self.scale_factor, mode='nearest'),
             nn.ConvTranspose2d(
                 in_channels=last_depth,
                 out_channels=new_depth,
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
+            nn.BatchNorm2d(new_depth),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
         ))
 
@@ -111,6 +112,7 @@ class PGenerator(nn.Module):
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
+            nn.BatchNorm2d(new_depth),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
         ))
 
@@ -153,9 +155,9 @@ class PGenerator(nn.Module):
 
         self.alpha = new_alpha
 
-    def upsampling(self, z):
-        upsample = nn.Upsample(scale_factor=self.scale_factor, mode='nearest') # downsampling
-        return upsample(z)
+    def upsampling(self, z, size):
+        return F.interpolate(z, size=size, mode='nearest')
+        # return F.adaptive_avg_pool2d(z, output_size=size)
 
     def transform_to_init_resolution_shape(self, z):
         return z.view(z.size(0), -1, self.init_resolution_size[0], self.init_resolution_size[1])
@@ -172,15 +174,15 @@ class PGenerator(nn.Module):
         if self.normalizationLayer is not None:
             z = self.normalizationLayer(z)
 
-        if self.alpha == 0 and len(self.blocks) == 0:
+        if len(self.blocks) == 0:
             y = self.base_block[1](z) # RGB Layer
             return y
 
-        if self.alpha > 0 and len(self.blocks) == 1:
-            y = self.upsampling(z)
-            y = self.base_block[1](y) # RGB Layer
-
         for block_number, block in enumerate(self.blocks, 0):
+            z = self.upsampling(z, size=(z.shape[-2]*2, z.shape[-1]*2))
+            if self.alpha < 1 and block_number == len(self.blocks)-1:
+                y = self.blocks[block_number-1][2](z)
+
             z = block[0](z)
             if self.normalizationLayer is not None:
                 z = self.normalizationLayer(z)
@@ -189,17 +191,13 @@ class PGenerator(nn.Module):
             if self.normalizationLayer is not None:
                 z = self.normalizationLayer(z)
 
-            if self.alpha == 0 and block_number == (len(self.blocks)-1):
+            if block_number == (len(self.blocks)-1):
                 z = block[2](z)
 
-            if self.alpha > 0:
-                if block_number == (len(self.blocks)-2):
-                    y = self.upsampling(z)
-                    y = block[2](y)
-                elif block_number == (len(self.blocks)-1):
-                    z = block[2](z)
+        if self.alpha > 0 and self.alpha < 1:
+            z = ((1.0 - self.alpha) * y) + self.alpha * z
 
-        if self.alpha > 0:
-            z = (1.0 - self.alpha * y) + self.alpha * z
+        # tangens_hip = nn.Tanh()
+        # z = tangens_hip(z)
 
         return z
