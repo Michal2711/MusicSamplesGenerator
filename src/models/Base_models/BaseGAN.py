@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 class BaseGAN(nn.Module):
     def __init__(self,
-                 latent_dim=100,
+                 latent_dim=256,
                  output_dim=1,
                  lr=0.0002, 
                  batch_size = 32,
@@ -80,7 +80,7 @@ class BaseGAN(nn.Module):
         pass
     
     def create_noise(self, batch_size):
-        noise = torch.randn(batch_size, self.latent_dim).to(self.device)
+        noise = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
         return noise
 
     def weights_init_he(self, m):
@@ -95,21 +95,12 @@ class BaseGAN(nn.Module):
             nn.init.zeros_(m.bias)
 
     def weights_init(self, m):
-        # classname = m.__class__.__name__
-        # if classname.find('Conv') != -1:
-        #     nn.init.normal_(m.weight.data, 0.0, 0.02)
-        # elif classname.find('BatchNorm') != -1:
-        #     nn.init.normal_(m.weight.data, 1.0, 0.02)
-        #     nn.init.constant_(m.bias.data, 0)
-        # for m in model.modules():
         classname = m.__class__.__name__
         if classname.find('Conv') != -1:
             nn.init.normal_(m.weight.data, 0.0, 0.02)
         elif classname.find('BatchNorm') != -1:
             nn.init.normal_(m.weight.data, 1.0, 0.02)
             nn.init.constant_(m.bias.data, 0)
-            # if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d, nn.BatchNorm2d)):
-            #     nn.init.normal_(m.weight.data, 0.0, 0.02)
 
     def update_solvers_device(self):
         self.discriminator.to(self.device)
@@ -153,11 +144,13 @@ class BaseGAN(nn.Module):
         
         for spec in spectrograms:
             spec = spec.squeeze()
-            fig = plt.figure(figsize=(10, 5))
-            img = librosa.display.specshow(spec, x_axis='time', y_axis='log')
-            plt.colorbar(img, format='%0.2f')
-            plt.axis('off')
-            
+            spec = np.abs(spec)
+            power_to_db = librosa.power_to_db(spec, ref=np.max)
+            fig = plt.figure(figsize=(8, 7))
+            librosa.display.specshow(power_to_db, sr=22050, x_axis='time', y_axis='mel', cmap='magma', hop_length=512)
+            plt.colorbar(label='dB')
+            # plt.xlabel('Time', fontdict=dict(size=15))
+            # plt.ylabel('Frequency', fontdict=dict(size=15))
             fig.canvas.draw()
             img_arr = np.array(fig.canvas.renderer.buffer_rgba())
             tensors.append(ToTensor()(img_arr))

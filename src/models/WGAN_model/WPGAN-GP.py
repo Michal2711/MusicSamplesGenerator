@@ -1,9 +1,10 @@
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
+import tqdm
 
 from models.PGAN_model.PGAN import PGAN
-from models.utils import gradient_penalty
+# from models.utils import gradient_penalty
 
 class WPGAN_GP(PGAN):
     def __init__(self, n_critic, lambda_gp, *args, **kwargs):
@@ -17,10 +18,10 @@ class WPGAN_GP(PGAN):
         self.set_writers("runs/WPGAN-GP")
 
     def get_optimizer_G(self):
-        return optim.Adam(self.generator.parameters(), lr=self.lr, betas=(0.0, 0.9))
+        return optim.Adam(self.generator.parameters(), lr=self.lr, betas=(0.0, 0.99))
     
     def get_optimizer_D(self):
-        return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0.0, 0.9))
+        return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0.0, 0.99))
     
     def add_hparams_to_writer(self, final_d_loss = None, final_g_loss = None):
         hparams = {
@@ -48,7 +49,16 @@ class WPGAN_GP(PGAN):
         
         self.writer_hparams.add_hparams(hparams, metrics)
 
+    def train_fc(self, dataloader):
+        
+        scaler_disc = torch.cuda.amp.GradScaler()
+        scaler_gen = torch.cuda.amp.GradScaler()
+
     def train(self, dataloader):
+
+        scaler_disc = torch.cuda.amp.GradScaler()
+        scaler_gen = torch.cuda.amp.GradScaler()
+
         for resolution in range(self.n_blocks):
 
             if type(self.num_epochs_per_resolution) is list:
@@ -65,36 +75,38 @@ class WPGAN_GP(PGAN):
                     elif epoch == fade_epochs:
                         self.update_alpha(1)
                     
-                for _, data in enumerate(dataloader):
+                loop = tqdm(dataloader, leave=True)
+                for batch_idx, (real, _) in enumerate(loop):
+                    real = real.to(self.device)
+                    cur_batch_size = real.shape[0]
+
+                    noise = self.create_noise(cur_batch_size)
+
+                    with torch.cuda.amp.autocast():
+                        fake = self.generator(noise)
+                        discriminator_real = self.discriminator(real)
+                        discriminator_fake = self.discriminator(fake.detach())
+
+                        gp = gradient_penalty(self.discriminator, real, fake, device=self.device)
+                        loss_disc = (
+                            -(torch.mean(discriminator_real) - torch.mean(discriminator_fake))
+                            + 10 * gp
+                            + (0.001 * torch.mean(discriminator_real ** 2))
+                        )
                     
-                    # 1. Train Discriminator
-                    for _ in range(self.n_critic):
+                    self.optimizer_D.zero_grad()
+                    scaler_disc.scale(loss_disc).backward()
+                    scaler_disc.step(self.optimize_discriminator)
+                    scaler_disc.update()
 
-                        self.optimizer_D.zero_grad()
+                    with torch.cuda.amp.autocast():
+                        gen_fake = self.discriminator(fake)
+                        loss_gen = -torch.mean(gen_fake)
 
-                        real_images = data.to(self.device)
-                        b_size = real_images.size(0)
-                        resolution_size = self.generator.get_output_size()
-                        # real_images = F.interpolate(data, size=resolution_size, mode="nearest")
-                        real_images_low_res = F.adaptive_avg_pool2d(real_images, output_size=resolution_size)
-                        real_output = self.discriminator(real_images_low_res).view(-1)
-
-                        # fake images
-                        noise = self.create_noise(batch_size=b_size)
-                        fake_images = self.generator(noise)
-                        fake_output = self.discriminator(fake_images.detach()).view(-1)
-                        gp = gradient_penalty(critic=self.discriminator, real=real_images, fake=fake_images, device=self.device)
-                        d_loss = -(torch.mean(real_output) - torch.mean(fake_output)) + self.lambda_gp*gp # maximazing
-                        d_loss.backward()
-                        self.writer.add_scalar("Loss_discriminator/train", d_loss, global_step=resolution*num_epochs + epoch)
-                        self.optimizer_D.step()
-
-                    self.optimizer_G.zero_grad() 
-                    fake_output = self.discriminator(fake_images).view(-1)
-                    g_loss = -torch.mean(fake_output)
-                    self.writer.add_scalar("Loss_generator/train", g_loss, global_step=resolution*num_epochs + epoch)
-                    g_loss.backward()
-                    self.optimizer_G.step()
+                    self.optimizer_G.zero_grad()
+                    scaler_gen.scale(loss_gen).backward()
+                    scaler_gen.step(self.optimizer_G)
+                    scaler_gen.update()
 
                 print(f"Resolution {resolution} - Epoch {epoch+1}/{num_epochs} - D Loss: {d_loss.item()} - G Loss: {g_loss.item()}")
 

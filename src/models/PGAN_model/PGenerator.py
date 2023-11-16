@@ -2,18 +2,13 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
-class NormalizationLayer(nn.Module):
-    def __init__(self):
-        super(NormalizationLayer, self).__init__()
-
-    def forward(self, z, epsilon=1e-8):
-        return z / torch.sqrt(torch.mean(z ** 2, dim=1, keepdim=True) + epsilon)
+from models.utils import AudioNorm
 
 class PGenerator(nn.Module):
     def __init__(self, 
                  init_depth=256, 
                  init_resolution_size=(8, 5),
-                 latent_dim=100,
+                 latent_dim=256,
                  scale_factor=2,
                  output_depth=1,
                  LReLU_negative_slope=0.2,
@@ -45,11 +40,9 @@ class PGenerator(nn.Module):
 
         self.normalizationLayer = None
         if normalization:
-            self.normalizationLayer = NormalizationLayer()
+            self.normalizationLayer = AudioNorm()
 
-        self.init_first_linear_layer()
         self.init_first_block()
-
         self.alpha = 0
 
     def get_current_device(self):
@@ -59,24 +52,25 @@ class PGenerator(nn.Module):
             device = torch.device("cpu")    
         return device
 
-    def init_first_linear_layer(self):
-        self.l1 = nn.Sequential(
-            nn.Linear(self.latent_dim, self.init_depth * self.init_resolution_size[0] * self.init_resolution_size[1]),
-            nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
-        )
-
     def init_first_block(self):
         self.base_block = nn.ModuleList()
 
         self.base_block.append(
             nn.Sequential(
                 nn.ConvTranspose2d(
+                    in_channels=self.latent_dim,
+                    out_channels=self.latent_dim,
+                    kernel_size=(self.init_resolution_size[0], self.init_resolution_size[1]),
+                    stride=1,
+                    padding=0
+                ),
+                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
+                nn.ConvTranspose2d(
                     in_channels=self.depths[0],
                     out_channels=self.depths[0],
                     kernel_size=self.kernel_size,
                     padding=self.padding
                 ),
-                nn.BatchNorm2d(self.depths[0]),
                 nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
             )
         )
@@ -89,30 +83,28 @@ class PGenerator(nn.Module):
                     kernel_size=1,
                 )
             )
+
         )
 
     def create_block(self, last_depth, new_depth):
         block = nn.ModuleList()
         block.append(nn.Sequential(
-            # nn.Upsample(scale_factor=self.scale_factor, mode='nearest'),
             nn.ConvTranspose2d(
                 in_channels=last_depth,
                 out_channels=new_depth,
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
-            nn.BatchNorm2d(new_depth),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
         ))
 
-        block.append(nn.Sequential(           
+        block.append(nn.Sequential(    
             nn.ConvTranspose2d(
                 in_channels=new_depth,
                 out_channels=new_depth,
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
-            nn.BatchNorm2d(new_depth),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
         ))
 
@@ -166,10 +158,6 @@ class PGenerator(nn.Module):
         if self.normalizationLayer is not None:
             z = self.normalizationLayer(z)
 
-        z = self.l1(z)
-        z = self.transform_to_init_resolution_shape(z)
-        z = self.normalizationLayer(z)
-
         z = self.base_block[0](z)
         if self.normalizationLayer is not None:
             z = self.normalizationLayer(z)
@@ -196,8 +184,6 @@ class PGenerator(nn.Module):
 
         if self.alpha > 0 and self.alpha < 1:
             z = ((1.0 - self.alpha) * y) + self.alpha * z
-
-        # tangens_hip = nn.Tanh()
-        # z = tangens_hip(z)
+            # z = torch.tanh(z)
 
         return z

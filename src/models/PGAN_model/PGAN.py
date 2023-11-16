@@ -4,11 +4,12 @@ import torch.optim as optim
 import torch.nn.functional as F
 import os
 from torchvision.utils import make_grid
+import tqdm
 
 from models.Base_models.BaseGAN import BaseGAN
 from models.PGAN_model.PDiscriminator import PDiscriminator
 from models.PGAN_model.PGenerator import PGenerator
-from models.utils import finiteCheck
+from models.utils import finiteCheck, AudioNorm
 
 class PGAN(BaseGAN):
     def __init__(self,
@@ -21,6 +22,7 @@ class PGAN(BaseGAN):
                  save_interval=2,
                  normalization=True,
                  mini_batch_normalization=False,
+                 gen_type = 'audio',
                  *args, **kwargs):
         r"""
         Progressive Growing GAN (PGAN) implementation.
@@ -51,6 +53,7 @@ class PGAN(BaseGAN):
         self.save_interval = save_interval
         self.normalization = normalization
         self.mini_batch_normalization = mini_batch_normalization
+        self.gen_type = gen_type
         self.init_resolution_size = init_resolution_size
         self.num_epochs_per_resolution = num_epochs_per_resolution
         self.gen_output_dim = gen_output_dim
@@ -63,11 +66,9 @@ class PGAN(BaseGAN):
 
         self.generator = self.get_generator().to(self.device)
         # self.generator.apply(self.weights_init)
-        # self.generator.apply(self.weights_init_he)
 
         self.discriminator = self.get_discriminator().to(self.device)
         # self.discriminator.apply(self.weights_init)
-        # self.discriminator.apply(self.weights_init_he)
 
         if self.loss != 'WGAN':
             self.optimizer_G = self.get_optimizer_G()
@@ -77,9 +78,9 @@ class PGAN(BaseGAN):
             self.optimizer_G.zero_grad()
             
             self.set_writers("runs/PGAN")
-            self.criterion = nn.MSELoss()
+            # self.criterion = nn.MSELoss()
             # self.criterion = nn.BCELoss()
-            # self.criterion = nn.BCEWithLogitsLoss()
+            self.criterion = nn.BCEWithLogitsLoss()
 
     def get_generator(self):
         generator = PGenerator(
@@ -94,7 +95,7 @@ class PGAN(BaseGAN):
 
     def get_discriminator(self):
         discriminator = PDiscriminator(
-            init_depth=self.init_depth,
+            last_depth=self.init_depth,
             init_resolution_size=self.init_resolution_size,
             LReLU_negative_slope=self.negative_slope,
             normalization=self.normalization,
@@ -103,14 +104,12 @@ class PGAN(BaseGAN):
         return discriminator
     
     def get_optimizer_G(self):
-        return optim.Adam(filter(lambda p: p.requires_grad, self.discriminator.parameters()),
+        return optim.Adam(filter(lambda p: p.requires_grad, self.generator.parameters()),
                     betas=[0, 0.99], lr=self.lr)
-        # return optim.Adam(self.generator.parameters(), lr=self.lr, betas=(0.5, 0.999))
     
     def get_optimizer_D(self):
         return optim.Adam(filter(lambda p: p.requires_grad, self.discriminator.parameters()),
                           betas=[0, 0.99], lr=self.lr)
-        # return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0.5, 0.999))
 
     def add_hparams_to_writer(self, final_d_loss = None, final_g_loss = None):
         hparams = {
@@ -196,8 +195,8 @@ class PGAN(BaseGAN):
         noise = self.create_noise(batch_size=b_size)
         fake_images = self.generator(noise)
         fake_pred = self.discriminator(fake_images)
+        fake_pred = fake_pred.squeeze(1)
 
-        fake_labels = fake_labels.unsqueeze(1)
         g_loss = self.criterion(fake_pred, fake_labels)
         g_loss.backward()
 
@@ -213,23 +212,24 @@ class PGAN(BaseGAN):
         b_size = real_images.size(0)
         noise = self.create_noise(batch_size=b_size)
         fake_images = self.generator(noise).detach()
-        
+
         self.optimizer_D.zero_grad()
 
         real_pred = self.discriminator(real_images)
         fake_pred = self.discriminator(fake_images)
 
-        real_labels = real_labels.unsqueeze(1)
-        fake_labels = fake_labels.unsqueeze(1)
+        real_pred = real_pred.squeeze(1)
+        fake_pred = fake_pred.squeeze(1)
 
         d_loss_real = self.criterion(real_pred, real_labels)
         d_loss_fake = self.criterion(fake_pred, fake_labels)
 
         d_loss = d_loss_real + d_loss_fake
 
-        if self.epsilonD > 0:
-            loss_epsilon = (real_pred[:, -1] ** 2).sum() * self.epsilonD
-            d_loss += loss_epsilon
+        # ???
+        # if self.epsilonD > 0:
+        #     loss_epsilon = (real_pred[:, -1] ** 2).sum() * self.epsilonD
+        #     d_loss += loss_epsilon
 
         d_loss.backward()
 
@@ -275,20 +275,13 @@ class PGAN(BaseGAN):
                 self.update_alpha(1)
 
         for i, data in enumerate(dataloader):
-            real_images = data.to(self.device)
-            # real_images = data[0].to(self.device)
+            if self.gen_type == 'audio':
+                real_images = data.to(self.device)
+            elif self.gen_type == 'pictures':
+                real_images = data[0].to(self.device)
+            
             resolution_size = self.generator.get_output_size()
-            # print(f'resolution_size: {resolution_size}')
-            # print(f'real image size: {real_images.shape}')
-
-            real_part = real_images.real
-            imag_part = real_images.imag
-
-            real_interpolated = F.interpolate(real_part, size=resolution_size, mode="nearest")
-            imag_interpolated = F.interpolate(imag_part, size=resolution_size, mode="nearest")
-
-            real_images_low_res = torch.complex(real_interpolated, imag_interpolated)
-            # real_images_low_res = F.interpolate(real_images, size=resolution_size, mode="nearest")
+            real_images_low_res = F.interpolate(real_images, size=resolution_size, mode="nearest")
             # real_images_low_res = F.adaptive_avg_pool2d(real_images, output_size=resolution_size) 
 
             d_loss, g_loss, b_size= self.optimizeParameters(real_images=real_images_low_res, resolution=resolution, num_epochs=num_epochs, epoch=epoch)
@@ -296,6 +289,9 @@ class PGAN(BaseGAN):
         return d_loss, g_loss, b_size, real_images_low_res
         
     def train(self, dataloader, checkpoint_path=None):
+
+        self.generator.train()
+        self.discriminator.train()
 
         if checkpoint_path is not None:
             epoch, resolution = self.load_checkpoint(checkpoint_path=checkpoint_path)
@@ -327,10 +323,12 @@ class PGAN(BaseGAN):
                     test_noise = self.create_noise(batch_size=b_size)
                     fake_images = self.generator(test_noise)
 
-                    real_tensor_grid = self.spectrograms_to_tensor_grid(real_images_low_res.cpu().numpy())
-                    fake_tensor_grid = self.spectrograms_to_tensor_grid(fake_images.cpu().numpy())
-                    # real_tensor_grid = make_grid(real_images_low_res.cpu(), normalize=True)
-                    # fake_tensor_grid = make_grid(fake_images.cpu(), normalize=True)
+                    if self.gen_type == 'audio':
+                        real_tensor_grid = self.spectrograms_to_tensor_grid(real_images_low_res.cpu().numpy())
+                        fake_tensor_grid = self.spectrograms_to_tensor_grid(fake_images.cpu().numpy())
+                    elif self.gen_type == 'pictures':    
+                        real_tensor_grid = make_grid(real_images_low_res.cpu(), normalize=True)
+                        fake_tensor_grid = make_grid(fake_images.cpu(), normalize=True)
 
                     self.writer_image_real.add_image("Real", real_tensor_grid, global_step=resolution*num_epochs + epoch)
                     self.writer_image_fake.add_image("Fake", fake_tensor_grid, global_step=resolution*num_epochs + epoch)

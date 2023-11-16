@@ -20,11 +20,11 @@ class WPGAN(PGAN):
 
         self.set_writers("runs/WPGAN")
 
-    def get_optimizer_G(self):
-        return optim.RMSprop(self.generator.parameters(), lr=self.lr)
+    # def get_optimizer_G(self):
+    #     return optim.Adam(self.generator.parameters(), lr=self.lr, betas=(0.0, 0.99))
     
-    def get_optimizer_D(self):
-        return optim.RMSprop(self.discriminator.parameters(), lr=self.lr)
+    # def get_optimizer_D(self):
+    #     return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0.0, 0.99))
     
     def add_hparams_to_writer(self, final_d_loss = None, final_g_loss = None):
         hparams = {
@@ -77,12 +77,12 @@ class WPGAN(PGAN):
         b_size = real_images.size(0)
         resolution_size = self.generator.get_output_size()
         real_images_low_res = F.interpolate(real_images, size=resolution_size, mode="nearest")
-        # real_images_low_res = F.adaptive_avg_pool2d(real_images, output_size=resolution_size)
+
         real_output = self.discriminator(real_images_low_res).view(-1)
 
-        # fake images
         noise = self.create_noise(batch_size=b_size)
         fake_images = self.generator(noise)
+
         fake_output = self.discriminator(fake_images.detach()).view(-1)
 
         d_loss = -(torch.mean(real_output) - torch.mean(fake_output)) # maximazing
@@ -120,5 +120,3 @@ class WPGAN(PGAN):
         )
 
         return d_loss, g_loss, b_size
-
-    

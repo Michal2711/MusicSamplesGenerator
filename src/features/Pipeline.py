@@ -52,7 +52,7 @@ class Pipeline():
 
     def create_mel_pipeline(self):
         self.pre_pipeline = [
-            self.resample,
+            # self.resample,
             self.padding,
             self.fade,
             self.normalization,
@@ -64,7 +64,7 @@ class Pipeline():
         self.post_pipeline = [
             self.transform_to_numpy,
             self.mel_invers,
-            self.denormalization,
+            # self.denormalization,
         ]
 
     def create_mfcc_pipeline(self):
@@ -114,11 +114,8 @@ class Pipeline():
     def loader(self, audio_path):
         audio, sr = librosa.core.load(
             path=audio_path,
-            mono=True,
-            # offset=0.0,
-            # # duration=self.audio_length/self.input_sr,
-            # dtype=np.float32,
-            # res_type='kaiser_best'
+            # mono=True,
+            sr=self.resample_sr
         )
 
         self.input_sr = sr
@@ -154,21 +151,20 @@ class Pipeline():
     def mel(self, wave):
         return librosa.feature.melspectrogram(
             y=wave,
-            # sr = self.resample_sr,
-            n_fft=getattr(self, 'n_fft', 1024),
-            hop_length=getattr(self, 'hop_length', 512),
-            win_length=getattr(self, 'win_length', 1024),
-            n_mels =getattr(self, 'n_mels', 256)
+            sr = 22050,
+            n_fft=getattr(self, 'n_fft', 2048), # 1024
+            hop_length=getattr(self, 'hop_length', 512), # 512
+            win_length=getattr(self, 'win_length', 2048), # 1024
+            n_mels=getattr(self, 'n_mels', 1024), # 256 - check 128 -> init_size (4,5)
         )
     
     def mel_invers(self, mel_spec):
         return librosa.feature.inverse.mel_to_audio(
             M=mel_spec,
-            # sr=self.resample_sr,
-            n_iter=100,
-            n_fft=getattr(self, 'n_fft', 1024),
+            sr=22050,
+            n_fft=getattr(self, 'n_fft', 2048),
             hop_length=getattr(self, 'hop_length', 512),
-            win_length=getattr(self, 'win_length', 1024),
+            win_length=getattr(self, 'win_length', 2048),
         )
     
     def stft(self, wave):
@@ -177,7 +173,7 @@ class Pipeline():
             n_fft=getattr(self, 'n_fft', 1024),
             hop_length=getattr(self, 'hop_length', 512),
             win_length=getattr(self, 'win_length', 1024)
-        )[:-1, :]
+        )
     
     def istft(self, stft_spec):
         return librosa.core.istft(
@@ -237,7 +233,6 @@ class Pipeline():
             return audio.float()
         else:
             return torch.FloatTensor(audio)
-        # return torch.from_numpy(audio)
     
     def transform_to_numpy(self, audio):
         return audio.numpy()

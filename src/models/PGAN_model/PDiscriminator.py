@@ -6,7 +6,7 @@ from models.utils import miniBatchStdDev
 
 class PDiscriminator(nn.Module):
     def __init__(self,
-                 init_depth=256,
+                 last_depth=256,
                  init_resolution_size=(8,5),
                  LReLU_negative_slope=0.2,
                  input_depth=1,
@@ -25,7 +25,7 @@ class PDiscriminator(nn.Module):
         
         super(PDiscriminator, self).__init__()
 
-        self.init_depth = init_depth
+        self.last_depth = last_depth
         self.init_resolution_size = init_resolution_size
         self.scale_factor = scale_factor
         self.LReLU_negative_slope = LReLU_negative_slope
@@ -36,11 +36,9 @@ class PDiscriminator(nn.Module):
         self.padding = 1
         self.normalization = normalization
 
-        self.depths = [init_depth]
+        self.depths = [last_depth]
 
         self.blocks = nn.ModuleList()
-
-        self.init_last_linear_layer()
         self.init_last_block()
 
         self.alpha = 0
@@ -52,15 +50,10 @@ class PDiscriminator(nn.Module):
             device = torch.device("cpu")    
         return device
 
-    def init_last_linear_layer(self):
-        self.last_layer = nn.Sequential(
-            nn.Linear(self.depths[0], self.last_layer_size),
-        )
-
     def init_last_block(self):
-        first_depth = self.init_depth
+        update_last_depth = self.last_depth
         if self.mini_batch_normalization:
-            first_depth += 1
+            update_last_depth += 1
 
         self.base_block = nn.ModuleList()
 
@@ -68,7 +61,7 @@ class PDiscriminator(nn.Module):
             nn.Sequential(
                 nn.Conv2d(
                     in_channels=self.input_depth,
-                    out_channels=first_depth,
+                    out_channels=self.last_depth,
                     kernel_size=1
                 ),
                 nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
@@ -78,24 +71,38 @@ class PDiscriminator(nn.Module):
         self.base_block.append(
             nn.Sequential(
                 nn.Conv2d(
-                    in_channels=first_depth,
-                    out_channels=self.init_depth,
+                    in_channels=update_last_depth,
+                    out_channels=self.last_depth,
                     kernel_size=self.kernel_size,
                     padding=self.padding
                 ),
-                nn.BatchNorm2d(self.init_depth),
-                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
-            )
-        )
-        self.base_block.append(
-            nn.Sequential(
-                nn.Linear(
-                    in_features=self.init_depth * self.init_resolution_size[0] * self.init_resolution_size[1],
-                    out_features=self.init_depth,
-                    ),
                 nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
+                nn.Conv2d(
+                    in_channels=self.last_depth,
+                    out_channels=self.last_depth, 
+                    kernel_size=(self.init_resolution_size[0], self.init_resolution_size[1]),
+                    stride=1,
+                    padding=0
+                ),
+                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
+                nn.Conv2d(
+                    in_channels=self.last_depth,
+                    out_channels=1,
+                    kernel_size=1,
+                    stride=1,
+                    padding=0
+                ),
             )
         )
+        # self.base_block.append(
+        #     nn.Sequential(
+        #         nn.Linear(
+        #             in_features=self.last_depth * self.init_resolution_size[0] * self.init_resolution_size[1],
+        #             out_features=self.last_depth,
+        #             ),
+        #         nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
+        #     )
+        # )
 
     def create_block(self, last_depth, new_depth):
         block = nn.ModuleList()
@@ -117,7 +124,6 @@ class PDiscriminator(nn.Module):
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
-            nn.BatchNorm2d(new_depth),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
             nn.Conv2d(
                 in_channels=new_depth,
@@ -125,7 +131,7 @@ class PDiscriminator(nn.Module):
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
-            nn.BatchNorm2d(last_depth),
+
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
         ))
 
@@ -165,8 +171,13 @@ class PDiscriminator(nn.Module):
         return z.view(-1, reshape_size)
 
     def forward(self, z):
+
+        # print(f'input z shape: {z.shape}')
+
         if len(self.blocks) == 0:
+            # print('a')
             z = self.base_block[0](z)
+            # print(f'after base block rgb: {z.shape}')
 
         if self.alpha < 1 and len(self.blocks) > 0:
             y = self.downsampling(z, size=(z.shape[-2]//2, z.shape[-1]//2))
@@ -188,14 +199,13 @@ class PDiscriminator(nn.Module):
                 bonding = False
                 z = self.alpha * z + (( 1.0 - self.alpha) * y)
 
+        # print(f'before mini batch normalization: {z.shape}')
         if self.mini_batch_normalization:
             z = miniBatchStdDev(z)
-        z = self.base_block[1](z)
-        z = self.reshape(z)
-        z= self.base_block[2](z)
-        out = self.last_layer(z)
+        # print(f'after mini batch normalization: {z.shape}')
 
-        # sigm = nn.Sigmoid()
-        # out = sigm(out)
+        out = self.base_block[1](z)
 
-        return out
+        # print(f'out shape: {out.shape}')
+
+        return out.view(z.shape[0], -1)
