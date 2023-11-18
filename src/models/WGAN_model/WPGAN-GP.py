@@ -1,27 +1,32 @@
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-import tqdm
+import os
 
 from models.PGAN_model.PGAN import PGAN
-# from models.utils import gradient_penalty
+from models.utils import finiteCheck, WGANGPGradientPenalty
 
-class WPGAN_GP(PGAN):
-    def __init__(self, n_critic, lambda_gp, *args, **kwargs):
+class WPGAN(PGAN):
+    def __init__(self, c, n_critic, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.c = c
         self.n_critic = n_critic
-        self.lambda_gp = lambda_gp
         self.optimizer_G = self.get_optimizer_G()
         self.optimizer_D = self.get_optimizer_D()
 
-        self.set_writers("runs/WPGAN-GP")
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.create_dir_for_saving(current_dir=current_dir, model="WPGAN")
 
-    def get_optimizer_G(self):
-        return optim.Adam(self.generator.parameters(), lr=self.lr, betas=(0.0, 0.99))
+        # self.criterion = self.get_criterion()
+
+        self.set_writers("runs/WPGAN")
+
+    # def get_optimizer_G(self):
+    #     return optim.Adam(self.generator.parameters(), lr=self.lr, betas=(0.0, 0.99))
     
-    def get_optimizer_D(self):
-        return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0.0, 0.99))
+    # def get_optimizer_D(self):
+    #     return optim.Adam(self.discriminator.parameters(), lr=self.lr, betas=(0.0, 0.99))
     
     def add_hparams_to_writer(self, final_d_loss = None, final_g_loss = None):
         hparams = {
@@ -30,6 +35,7 @@ class WPGAN_GP(PGAN):
             'learning_rate': self.lr,
             'batch_size': self.batch_size,
             'loss': self.loss,
+            'gpu': self.gpu,
             'depths': f"{self.depths}",
             'init_resolution_size': f"{self.init_resolution_size}",
             'num_epochs': len(self.depths) * self.num_epochs_per_resolution,
@@ -38,7 +44,7 @@ class WPGAN_GP(PGAN):
             'fade_in': self.fade_in_percentage,
             'normalization': self.normalization,
             'mini_batch_normalization': self.mini_batch_normalization,
-            'lambda_gp': self.lambda_gp,
+            'c': self.c,
             'n_critic': self.n_critic
         }
 
@@ -49,74 +55,90 @@ class WPGAN_GP(PGAN):
         
         self.writer_hparams.add_hparams(hparams, metrics)
 
-    def train_fc(self, dataloader):
-        
-        scaler_disc = torch.cuda.amp.GradScaler()
-        scaler_gen = torch.cuda.amp.GradScaler()
+    def get_criterion(self, input, status):
+        if status:
+            return -input[:, -1].mean()
+        return input[:, -1].mean()
 
-    def train(self, dataloader):
+    def optimize_generator(self, b_size, resolution, num_epochs, epoch):
+        self.optimizer_G.zero_grad() 
+        self.optimizer_D.zero_grad()
 
-        scaler_disc = torch.cuda.amp.GradScaler()
-        scaler_gen = torch.cuda.amp.GradScaler()
+        noise = self.create_noise(batch_size=b_size)
+        gen_output = self.generator(noise)
+        fake_pred = self.discriminator(gen_output)
+        g_loss = self.get_criterion(fake_pred, True)
+        g_loss.backward()
 
-        for resolution in range(self.n_blocks):
+        g_gradient_norm = self.compute_gradient_norm(self.generator.parameters())
+        self.writer_losses.add_scalar("Gradient_norms/Generator", g_gradient_norm, global_step=resolution*num_epochs + epoch)
 
-            if type(self.num_epochs_per_resolution) is list:
-                fade_epochs = int(self.num_epochs_per_resolution[resolution] * self.fade_in_percentage)
-                num_epochs = self.num_epochs_per_resolution[resolution]
-            else:
-                fade_epochs = int(self.num_epochs_per_resolution * self.fade_in_percentage)
-                num_epochs = self.num_epochs_per_resolution
+        finiteCheck(self.generator.parameters())
+        self.optimizer_G.step()
 
-            for epoch in range(num_epochs):
-                if resolution > 0:
-                    if epoch < fade_epochs:
-                        self.update_alpha((epoch+1)/ fade_epochs)
-                    elif epoch == fade_epochs:
-                        self.update_alpha(1)
-                    
-                loop = tqdm(dataloader, leave=True)
-                for batch_idx, (real, _) in enumerate(loop):
-                    real = real.to(self.device)
-                    cur_batch_size = real.shape[0]
-
-                    noise = self.create_noise(cur_batch_size)
-
-                    with torch.cuda.amp.autocast():
-                        fake = self.generator(noise)
-                        discriminator_real = self.discriminator(real)
-                        discriminator_fake = self.discriminator(fake.detach())
-
-                        gp = gradient_penalty(self.discriminator, real, fake, device=self.device)
-                        loss_disc = (
-                            -(torch.mean(discriminator_real) - torch.mean(discriminator_fake))
-                            + 10 * gp
-                            + (0.001 * torch.mean(discriminator_real ** 2))
-                        )
-                    
-                    self.optimizer_D.zero_grad()
-                    scaler_disc.scale(loss_disc).backward()
-                    scaler_disc.step(self.optimize_discriminator)
-                    scaler_disc.update()
-
-                    with torch.cuda.amp.autocast():
-                        gen_fake = self.discriminator(fake)
-                        loss_gen = -torch.mean(gen_fake)
-
-                    self.optimizer_G.zero_grad()
-                    scaler_gen.scale(loss_gen).backward()
-                    scaler_gen.step(self.optimizer_G)
-                    scaler_gen.update()
-
-                print(f"Resolution {resolution} - Epoch {epoch+1}/{num_epochs} - D Loss: {d_loss.item()} - G Loss: {g_loss.item()}")
-
-            if resolution < self.n_blocks-1:
-                self.add_new_block(self.depths[resolution+1])
-        
-        self.add_hparams_to_writer(final_d_loss=d_loss.item(), final_g_loss=g_loss.item())
-        spectrograms = next(iter(dataloader))
-        spectrograms = spectrograms.to(self.device)
-        self.add_models_to_writer(spectrograms)
-        self.flush_all_writers()
-
+        return g_loss
     
+    def optimize_discriminator(self, real_images, b_size, resolution, num_epochs, epoch):
+
+        real_images = real_images.to(self.device)
+        noise = self.create_noise(batch_size=b_size)
+        resolution_size = self.generator.get_output_size()
+        real_images_low_res = F.interpolate(real_images, size=resolution_size, mode="nearest")
+
+        gen_output = self.generator(noise).detach()
+        
+        self.optimizer_D.zero_grad()
+
+        real_pred = self.discriminator(real_images_low_res)
+        fake_pred = self.discriminator(gen_output)
+
+        d_loss = self.get_criterion(real_pred, True)
+        d_loss_fake = self.get_criterion(fake_pred, False)
+        d_loss += d_loss_fake
+
+        if self.loss == 'WGAN':
+            d_loss_GP, lipschitz_norm = WGANGPGradientPenalty(
+                input = real_images_low_res,
+                fake = gen_output,
+                discriminator=self.discriminator,
+                weight=10.,
+                backward=True
+            )
+
+        d_gradient_norm = self.compute_gradient_norm(self.discriminator.parameters())
+        self.writer_losses.add_scalar("Gradient_norms/Discriminator", d_gradient_norm, global_step=resolution*num_epochs + epoch)
+
+        if self.epsilonD > 0:
+            epsilon_loss = (real_pred[:, -1] ** 2).sum() * self.epsilonD
+            d_loss += epsilon_loss
+
+        d_loss.backward()
+
+        finiteCheck(self.discriminator.parameters()) # check if needed
+        self.optimizer_D.step()
+
+        # # Clip weights of discriminator
+        # for p in self.discriminator.parameters():
+        #     p.data.clamp_(-self.c, self.c)
+        
+        return d_loss
+
+    def optimizeParameters(self, real_images, resolution, num_epochs, epoch):
+        b_size = real_images.size(0)
+        real_images = real_images.to(self.device).float()
+
+        d_loss = self.optimize_discriminator(
+            real_images=real_images, 
+            b_size=b_size,
+            resolution=resolution,
+            num_epochs=num_epochs,
+            epoch=epoch
+        )
+        g_loss = self.optimize_generator(
+            b_size=b_size,
+            resolution=resolution,
+            num_epochs=num_epochs,
+            epoch=epoch
+        )
+
+        return d_loss, g_loss, b_size

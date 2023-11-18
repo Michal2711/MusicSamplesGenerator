@@ -86,6 +86,11 @@ class WPGAN(PGAN):
         fake_output = self.discriminator(fake_images.detach()).view(-1)
 
         d_loss = -(torch.mean(real_output) - torch.mean(fake_output)) # maximazing
+
+        # if self.epsilonD > 0:
+        #     loss_epsilon = (real_output[:, -1] ** 2).sum() * self.epsilonD
+        #     d_loss += loss_epsilon
+
         d_loss.backward()
 
         d_gradient_norm = self.compute_gradient_norm(self.discriminator.parameters())

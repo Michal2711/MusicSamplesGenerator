@@ -83,24 +83,14 @@ class BaseGAN(nn.Module):
         noise = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
         return noise
 
-    def weights_init_he(self, m):
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in', nonlinearity='leaky_relu')
-        elif classname.find('Linear') != -1:
-            nn.init.kaiming_normal_(m.weight, a=0, mode='fan_in', nonlinearity='leaky_relu')
-            nn.init.zeros_(m.bias)
-        elif classname.find('BatchNorm2d') != -1:
-            nn.init.normal_(m.weight, 1.0, 0.02)
-            nn.init.zeros_(m.bias)
-
-    def weights_init(self, m):
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            nn.init.normal_(m.weight.data, 0.0, 0.02)
-        elif classname.find('BatchNorm') != -1:
-            nn.init.normal_(m.weight.data, 1.0, 0.02)
-            nn.init.constant_(m.bias.data, 0)
+    # def weights_init(self, m):
+    #     classname = m.__class__.__name__
+    #     if classname.find('Conv') != -1:
+    #         print(f'classname: {classname}')
+    #         nn.init.normal_(m.weight.data, 0.0, 0.02)
+    #     elif classname.find('BatchNorm2d') != -1:
+    #         nn.init.normal_(m.weight.data, 1.0, 0.02)
+    #         nn.init.constant_(m.bias.data, 0)
 
     def update_solvers_device(self):
         self.discriminator.to(self.device)

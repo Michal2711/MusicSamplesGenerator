@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 
 from models.utils import AudioNorm
+from ..custom_layers import EqualizedConv2d
 
 class PGenerator(nn.Module):
     def __init__(self, 
@@ -33,6 +34,7 @@ class PGenerator(nn.Module):
         self.kernel_size = 3
         self.padding = 1
         self.normalization = normalization
+        self.transposed = True
 
         self.depths = [init_depth]
 
@@ -51,6 +53,12 @@ class PGenerator(nn.Module):
         else:
             device = torch.device("cpu")    
         return device
+
+    def init_weights(self, m):
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            print(f'classname: {classname}')
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
 
     def init_first_block(self):
         self.base_block = nn.ModuleList()
@@ -71,13 +79,20 @@ class PGenerator(nn.Module):
                     kernel_size=self.kernel_size,
                     padding=self.padding
                 ),
-                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
+                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
+                nn.ConvTranspose2d(
+                    in_channels=self.depths[0],
+                    out_channels=self.depths[0],
+                    kernel_size=self.kernel_size,
+                    padding=self.padding
+                ),
+                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope), 
             )
         )
 
         self.base_block.append(
             nn.Sequential(
-                nn.Conv2d(
+                nn.ConvTranspose2d(
                     in_channels=self.depths[0],
                     out_channels=self.output_depth,
                     kernel_size=1,
@@ -85,6 +100,8 @@ class PGenerator(nn.Module):
             )
 
         )
+
+        self.base_block.apply(self.init_weights)
 
     def create_block(self, last_depth, new_depth):
         block = nn.ModuleList()
@@ -105,18 +122,28 @@ class PGenerator(nn.Module):
                 kernel_size=self.kernel_size,
                 padding=self.padding
             ),
-            nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
+            nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
+            # nn.ConvTranspose2d(
+            #     in_channels=new_depth,
+            #     out_channels=new_depth,
+            #     kernel_size=self.kernel_size,
+            #     padding=self.padding
+            # ),
+            # nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
         ))
 
-        block.append(
-            nn.Sequential(
-                nn.Conv2d(
+        block.append( # to RGB
+            nn.Sequential(                
+                nn.ConvTranspose2d(
                     in_channels=new_depth,
                     out_channels=self.output_depth,
                     kernel_size=1,
                 ),
             )
         )
+
+        block.apply(self.init_weights)
+
         return block
 
     def add_next_block(self, new_depth):
@@ -155,6 +182,7 @@ class PGenerator(nn.Module):
         return z.view(z.size(0), -1, self.init_resolution_size[0], self.init_resolution_size[1])
     
     def forward(self, z):
+        
         if self.normalizationLayer is not None:
             z = self.normalizationLayer(z)
 

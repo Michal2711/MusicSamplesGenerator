@@ -22,6 +22,7 @@ class PGAN(BaseGAN):
                  save_interval=2,
                  normalization=True,
                  mini_batch_normalization=False,
+                 epsilon_D = 0.001,
                  gen_type = 'audio',
                  *args, **kwargs):
         r"""
@@ -59,13 +60,15 @@ class PGAN(BaseGAN):
         self.gen_output_dim = gen_output_dim
         self.n_blocks = len(depths)
         self.alpha = 0
-        self.epsilonD = 0.001
+        self.epsilonD = epsilon_D
 
         current_dir = os.path.dirname(os.path.abspath(__file__))
         self.create_dir_for_saving(current_dir=current_dir, model="PGAN")
 
         self.generator = self.get_generator().to(self.device)
         # self.generator.apply(self.weights_init)
+
+        print('---')
 
         self.discriminator = self.get_discriminator().to(self.device)
         # self.discriminator.apply(self.weights_init)
