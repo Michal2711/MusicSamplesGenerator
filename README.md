@@ -36,16 +36,18 @@ Project Organization
     │   ├── __init__.py    <- Makes src a Python module
     │   │
     │   ├── data           <- Scripts to download or generate data
-    │   │   └── make_dataset.py
+    │   │   └── audio_dataset.py
     │   │
     │   ├── features       <- Scripts to turn raw data into features for modeling
-    │   │   └── build_features.py
+    │   │   └── Pipeline.py
     │   │
     │   ├── models         <- Scripts to train models and then use trained models to make
     │   │   │                 predictions
-    │   │   ├── predict_model.py
-    │   │   └── train_model.py
-    │   │
+    │   │   ├── ACGAN      <- Implementation of ACGAN model
+    │   │   ├── Base_model <- Implementation of BaseGAN model
+    │   │   ├── PGAN_model <- Implementation of PGAN model based on BaseGAN model with Generator and Discriminator code and train code
+    │   │   └── WGAN_model <- Implementation of WGAN and WGAN-GP models based on PGAN model
+    │   │     
     │   └── visualization  <- Scripts to create exploratory and results oriented visualizations
     │       └── visualize.py
     │

@@ -3,7 +3,6 @@ import torch
 import torch.nn.functional as F
 
 from models.utils import miniBatchStdDev
-from ..custom_layers import EqualizedConv2d
 
 class PDiscriminator(nn.Module):
     def __init__(self,
@@ -12,9 +11,10 @@ class PDiscriminator(nn.Module):
                  LReLU_negative_slope=0.2,
                  input_depth=1,
                  last_layer_size=1,
+                 feature_size=1,
                  mini_batch_normalization=False,
                  scale_factor = 0.5,
-                 normalization=True):
+                 normalization=False):
         r"""
         Args:
             init_depth (int): The initial depth (number of channels) for the model layers.
@@ -23,7 +23,7 @@ class PDiscriminator(nn.Module):
             last_layer_size (int): The size of the last layer before the output.
             scale_factor (float): The scaling factor for downscaling the image.
         """    
-        
+
         super(PDiscriminator, self).__init__()
 
         self.last_depth = last_depth
@@ -32,6 +32,7 @@ class PDiscriminator(nn.Module):
         self.LReLU_negative_slope = LReLU_negative_slope
         self.input_depth = input_depth
         self.last_layer_size = last_layer_size
+        self.feature_size = feature_size
         self.mini_batch_normalization = mini_batch_normalization
         self.kernel_size = 3
         self.padding = 1
@@ -52,10 +53,9 @@ class PDiscriminator(nn.Module):
         return device
 
     def init_weights(self, m):
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            print(f'classname: {classname}')
+        if isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Conv2d):
             nn.init.normal_(m.weight.data, 0.0, 0.02)
+            m.bias.data.fill_(0.0)
 
     def init_last_block(self):
         update_last_depth = self.last_depth
@@ -64,7 +64,7 @@ class PDiscriminator(nn.Module):
 
         self.base_block = nn.ModuleList()
 
-        self.base_block.append( # from RGB Layer
+        self.base_block.append( # fromRGB Layer
             nn.Sequential(
                 nn.Conv2d(
                     in_channels=self.input_depth,
@@ -99,17 +99,28 @@ class PDiscriminator(nn.Module):
                     padding=0
                 ),
                 nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
-                nn.Conv2d(
-                    in_channels=self.last_depth,
-                    out_channels=1,
-                    kernel_size=1,
-                    stride=1,
-                    padding=0
-                ),
             )
         )
 
+        self.value_output = nn.Conv2d(
+            in_channels=self.last_depth,
+            out_channels=1,
+            kernel_size=1,
+            stride=1,
+            padding=0
+        )
+
+        self.classification_output = nn.Conv2d(
+            in_channels=self.last_depth,
+            out_channels=self.feature_size,
+            kernel_size=1,
+            stride=1,
+            padding=0
+        )
+
         self.base_block.apply(self.init_weights)
+        self.value_output.apply(self.init_weights)
+        self.classification_output.apply(self.init_weights)
 
     def create_block(self, last_depth, new_depth):
         block = nn.ModuleList()
@@ -130,13 +141,6 @@ class PDiscriminator(nn.Module):
                 padding=self.padding
             ),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
-            # nn.Conv2d(
-            #     in_channels=new_depth,
-            #     out_channels=new_depth,
-            #     kernel_size=self.kernel_size,
-            #     padding=self.padding
-            # ),
-            # nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
             nn.Conv2d(
                 in_channels=new_depth,
                 out_channels=last_depth,
@@ -171,7 +175,6 @@ class PDiscriminator(nn.Module):
 
     def downsampling(self, z, size):
         return F.interpolate(z, size=size, mode='nearest')
-        # return F.adaptive_avg_pool2d(z, output_size=size)
 
     def reshape(self, z):
         if len(z.size()) == 4:
@@ -183,17 +186,17 @@ class PDiscriminator(nn.Module):
             reshape_size *= s
         return z.view(-1, reshape_size)
 
-    def forward(self, z):
+    def forward(self, z, get_features=False):
 
         if len(self.blocks) == 0:
             z = self.base_block[0](z)
 
         if self.alpha < 1 and len(self.blocks) > 0:
-            y = self.downsampling(z, size=(z.shape[-2]//2, z.shape[-1]//2))
+            downsampled = self.downsampling(z, size=(z.shape[-2]//2, z.shape[-1]//2))
             if len(self.blocks) == 1:
-                y = self.base_block[0](y)
+                y = self.base_block[0](downsampled)
             else:
-                y =  self.blocks[-2][0](y)
+                y =  self.blocks[-2][0](downsampled)
             bonding = True
         else:
             bonding = False
@@ -211,6 +214,12 @@ class PDiscriminator(nn.Module):
         if self.mini_batch_normalization:
             z = miniBatchStdDev(z)
 
-        out = self.base_block[1](z)
+        z = self.base_block[1](z)
 
-        return out
+        value_output = self.value_output(z)
+        
+        if get_features:
+            class_features = self.classification_output(z)
+            return value_output, class_features 
+
+        return value_output, None

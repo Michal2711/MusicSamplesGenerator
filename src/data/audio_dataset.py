@@ -8,11 +8,11 @@ import torch
 from torch.utils.data import Dataset
 
 class AudioSpectrogramDataset(Dataset):
-    def __init__(self, base_directory, spectro_type):
+    def __init__(self, base_directory, spectro_type, conditions_path=None):
         self.base_directory = base_directory
         self.spectro_type = spectro_type
         self.file_list = glob.glob(os.path.join(base_directory, '*.wav'), recursive=True)
-        self.pipeline = Pipeline(self.spectro_type)
+        self.pipeline = Pipeline(self.spectro_type, conditions_path=conditions_path)
 
         if spectro_type not in ['waveform', 'stft', 'mel', 'mfcc', 'cqt']:
             raise ValueError(
@@ -28,13 +28,14 @@ class AudioSpectrogramDataset(Dataset):
 
         audio_path = self.file_list[idx]
 
-        spectrogram = self.pipeline.process(audio_path)
+        spectrogram, feature_vector = self.pipeline.process(audio_path)
 
         if spectrogram.is_complex():
             spectrogram = spectrogram.to(dtype=torch.complex64).unsqueeze(0)
         else:
             spectrogram = torch.FloatTensor(spectrogram).unsqueeze(0)
-        return spectrogram
+
+        return spectrogram, feature_vector
 
     def get_data_size(self):
         return self.__getitem__(0).size()

@@ -79,10 +79,10 @@ target/
 /data/
 
 /models/generated_samples/
+/models/saved_models/
 /notebooks/runs/
 /src/models/PGAN_model/checkpoints/
 /src/models/WGAN_model/checkpoints/
-/models/
 
 # Mac OS-specific storage files
 .DS_Store

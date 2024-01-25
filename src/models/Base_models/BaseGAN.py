@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from abc import abstractmethod
 import numpy as np
 import librosa
@@ -10,14 +9,15 @@ from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 
-class BaseGAN(nn.Module):
+class BaseGAN():
     def __init__(self,
                  latent_dim=256,
                  output_dim=1,
                  lr=0.0002, 
                  batch_size = 32,
                  loss='MSE',
-                 gpu=True):
+                 gpu=True,
+                 acgan=False):
 
         r"""
         Base class for Generative Adversarial Networks (GANs).
@@ -33,7 +33,6 @@ class BaseGAN(nn.Module):
             lr (float): The learning rate for the optimizers.
             loss (string): The loss function used in training. Must be one of ['MSE', 'BCE', 'WGAN'].
         """
-        super(BaseGAN, self).__init__()
 
         self.latent_dim = latent_dim
         self.output_dim = output_dim
@@ -41,6 +40,7 @@ class BaseGAN(nn.Module):
         self.batch_size = batch_size
         self.loss = loss
         self.gpu = gpu
+        self.acgan = acgan
         self.checkpoint_dir = ""
         self.model_save_dir = ""
 
@@ -82,15 +82,6 @@ class BaseGAN(nn.Module):
     def create_noise(self, batch_size):
         noise = torch.randn(batch_size, self.latent_dim, 1, 1).to(self.device)
         return noise
-
-    # def weights_init(self, m):
-    #     classname = m.__class__.__name__
-    #     if classname.find('Conv') != -1:
-    #         print(f'classname: {classname}')
-    #         nn.init.normal_(m.weight.data, 0.0, 0.02)
-    #     elif classname.find('BatchNorm2d') != -1:
-    #         nn.init.normal_(m.weight.data, 1.0, 0.02)
-    #         nn.init.constant_(m.bias.data, 0)
 
     def update_solvers_device(self):
         self.discriminator.to(self.device)
@@ -134,13 +125,10 @@ class BaseGAN(nn.Module):
         
         for spec in spectrograms:
             spec = spec.squeeze()
-            spec = np.abs(spec)
-            power_to_db = librosa.power_to_db(spec, ref=np.max)
+            power_to_db = librosa.amplitude_to_db(spec, ref=np.min)
             fig = plt.figure(figsize=(8, 7))
-            librosa.display.specshow(power_to_db, sr=22050, x_axis='time', y_axis='mel', cmap='magma', hop_length=512)
-            plt.colorbar(label='dB')
-            # plt.xlabel('Time', fontdict=dict(size=15))
-            # plt.ylabel('Frequency', fontdict=dict(size=15))
+            librosa.display.specshow(power_to_db, sr=16000, x_axis='time', y_axis='mel')
+            plt.colorbar(format='%+2.0f dB')
             fig.canvas.draw()
             img_arr = np.array(fig.canvas.renderer.buffer_rgba())
             tensors.append(ToTensor()(img_arr))
@@ -197,3 +185,18 @@ class BaseGAN(nn.Module):
         }, model_path)
 
         print(f'Full model saved: {model_path}')
+
+    def load_pretrained_model(self, model_path, load_optimizers):
+
+        saved_model = torch.load(model_path)
+
+        self.generator = saved_model['generator'].to(self.device)
+        self.discriminator = saved_model['discriminator']
+        
+        if load_optimizers:
+            self.optimizer_G = self.get_optimizer_G()
+            self.optimizer_G.load_state_dict(saved_model['optimizer_G_state_dict'])
+            self.optimizer_D = self.get_optimizer_D()
+            self.optimizer_D.load_state_dict(saved_model['optimizer_D_state_dict'])
+
+        print(f'Model loaded from {model_path}')

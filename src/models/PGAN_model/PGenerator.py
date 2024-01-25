@@ -2,9 +2,6 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
-from models.utils import AudioNorm
-from ..custom_layers import EqualizedConv2d
-
 class PGenerator(nn.Module):
     def __init__(self, 
                  init_depth=256, 
@@ -13,7 +10,8 @@ class PGenerator(nn.Module):
                  scale_factor=2,
                  output_depth=1,
                  LReLU_negative_slope=0.2,
-                 normalization=True):
+                 normalization=True,
+                 feature_size=0):
         r"""
         Args:
             init_depth (int): Initial depth (number of channels) for the model layers.
@@ -21,7 +19,6 @@ class PGenerator(nn.Module):
             scale_factor (float): The scaling factor for upscaling the image.
             output_depth (int): Depth (number of channels) of the output images.
         """
-
 
         super(PGenerator, self).__init__()
 
@@ -39,10 +36,7 @@ class PGenerator(nn.Module):
         self.depths = [init_depth]
 
         self.blocks = nn.ModuleList()
-
-        self.normalizationLayer = None
-        if normalization:
-            self.normalizationLayer = AudioNorm()
+        self.feature_size = feature_size
 
         self.init_first_block()
         self.alpha = 0
@@ -55,10 +49,9 @@ class PGenerator(nn.Module):
         return device
 
     def init_weights(self, m):
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            print(f'classname: {classname}')
+        if isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Conv2d):
             nn.init.normal_(m.weight.data, 0.0, 0.02)
+            m.bias.data.fill_(0.0)
 
     def init_first_block(self):
         self.base_block = nn.ModuleList()
@@ -66,8 +59,8 @@ class PGenerator(nn.Module):
         self.base_block.append(
             nn.Sequential(
                 nn.ConvTranspose2d(
-                    in_channels=self.latent_dim,
-                    out_channels=self.latent_dim,
+                    in_channels=self.latent_dim + self.feature_size,
+                    out_channels=self.depths[0],
                     kernel_size=(self.init_resolution_size[0], self.init_resolution_size[1]),
                     stride=1,
                     padding=0
@@ -86,11 +79,11 @@ class PGenerator(nn.Module):
                     kernel_size=self.kernel_size,
                     padding=self.padding
                 ),
-                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope), 
+                nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
             )
         )
 
-        self.base_block.append(
+        self.base_block.append( # toRGB
             nn.Sequential(
                 nn.ConvTranspose2d(
                     in_channels=self.depths[0],
@@ -98,7 +91,6 @@ class PGenerator(nn.Module):
                     kernel_size=1,
                 )
             )
-
         )
 
         self.base_block.apply(self.init_weights)
@@ -113,9 +105,6 @@ class PGenerator(nn.Module):
                 padding=self.padding
             ),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
-        ))
-
-        block.append(nn.Sequential(    
             nn.ConvTranspose2d(
                 in_channels=new_depth,
                 out_channels=new_depth,
@@ -123,16 +112,9 @@ class PGenerator(nn.Module):
                 padding=self.padding
             ),
             nn.LeakyReLU(negative_slope=self.LReLU_negative_slope),
-            # nn.ConvTranspose2d(
-            #     in_channels=new_depth,
-            #     out_channels=new_depth,
-            #     kernel_size=self.kernel_size,
-            #     padding=self.padding
-            # ),
-            # nn.LeakyReLU(negative_slope=self.LReLU_negative_slope)
         ))
 
-        block.append( # to RGB
+        block.append( # toRGB
             nn.Sequential(                
                 nn.ConvTranspose2d(
                     in_channels=new_depth,
@@ -143,7 +125,6 @@ class PGenerator(nn.Module):
         )
 
         block.apply(self.init_weights)
-
         return block
 
     def add_next_block(self, new_depth):
@@ -151,6 +132,7 @@ class PGenerator(nn.Module):
         self.depths.append(new_depth)
 
         new_block = self.create_block(last_depth=last_depth, new_depth=new_depth)
+        
         current_device = self.get_current_device()
         new_block = new_block.to(device=current_device)
 
@@ -176,42 +158,27 @@ class PGenerator(nn.Module):
 
     def upsampling(self, z, size):
         return F.interpolate(z, size=size, mode='nearest')
-        # return F.adaptive_avg_pool2d(z, output_size=size)
-
-    def transform_to_init_resolution_shape(self, z):
-        return z.view(z.size(0), -1, self.init_resolution_size[0], self.init_resolution_size[1])
     
-    def forward(self, z):
-        
-        if self.normalizationLayer is not None:
-            z = self.normalizationLayer(z)
+    def forward(self, z, feature_vector=None):
 
-        z = self.base_block[0](z)
-        if self.normalizationLayer is not None:
-            z = self.normalizationLayer(z)
+        block_out = self.base_block[0](z)
 
         if len(self.blocks) == 0:
-            y = self.base_block[1](z) # RGB Layer
-            return y
+            base_RGB = self.base_block[1](block_out)
+            return base_RGB
 
         for block_number, block in enumerate(self.blocks, 0):
-            z = self.upsampling(z, size=(z.shape[-2]*2, z.shape[-1]*2))
-            if self.alpha < 1 and block_number == len(self.blocks)-1:
-                y = self.blocks[block_number-1][2](z)
 
-            z = block[0](z)
-            if self.normalizationLayer is not None:
-                z = self.normalizationLayer(z)
+            upsampled = self.upsampling(block_out, size=(block_out.shape[-2]*2, block_out.shape[-1]*2))
+            block_out = block[0](upsampled)
 
-            z = block[1](z)
-            if self.normalizationLayer is not None:
-                z = self.normalizationLayer(z)
+            if block_number == len(self.blocks)-1:
+                old_RGB = self.blocks[block_number-1][1](upsampled)
+                last_block_RGB = block[1](block_out)
 
-            if block_number == (len(self.blocks)-1):
-                z = block[2](z)
-
-        if self.alpha > 0 and self.alpha < 1:
-            z = ((1.0 - self.alpha) * y) + self.alpha * z
-            # z = torch.tanh(z)
-
-        return z
+        if self.alpha < 1:
+            out = ((1.0 - self.alpha) * old_RGB) + self.alpha * last_block_RGB
+        else:
+            out = last_block_RGB
+        
+        return out
