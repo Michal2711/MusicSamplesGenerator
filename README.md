@@ -149,8 +149,8 @@ features_keys_order = {
 Pretrained models and generated samples
 ------------
 
-Pretrained models and generated samples:
+Pretrained models and generated samples are located here:
 * models/saved_models/
 * models/generated_samples/
 
-Also in models/saved_models/ dictionary there is a pre_trained_config.json file with configs for some pretrained models to use in Streamlit application.Pretrained path for Pitch-Velocity-Quality-condition should be replaced, because this models does not correspond to config parameters. This is merely a preparation of the possibility of using a model based on conditional features such as pitch, velocity and qualitative features. 
+Also in models/saved_models/ dictionary there is a pre_trained_config.json file with configs for some pretrained models to use in Streamlit application. Pretrained path for Pitch-Velocity-Quality-condition should be replaced, because this models does not correspond to config parameters. This is merely a preparation of the possibility of using a model based on conditional features such as pitch, velocity and qualitative features. 
