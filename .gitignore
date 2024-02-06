@@ -78,8 +78,8 @@ target/
 # exclude data from source control by default
 /data/
 
-/models/generated_samples/
-/models/saved_models/
+# /models/generated_samples/
+# /models/saved_models/
 /notebooks/runs/
 /src/runs/
 /src/models/PGAN_model/checkpoints/

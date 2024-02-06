@@ -1,0 +1,192 @@
+{
+    "Single-bass-without-condition": {
+        "pretrained_path":  "./../models/saved_models/WPGAN/WPGAN-GP-single-bass",
+        "type_parameters": {
+            "get_type": "audio",
+            "init_resolution_size": [
+                8,
+                4
+            ]
+        },
+        "basic_model_parameters": {
+            "latent_dim": 256,
+            "output_dim": 1,
+            "learning_rate": 4e-1,
+            "loss": "WGAN",
+            "batch_size": 16,
+            "gpu": true,
+            "epsilon_D": 0.001,
+            "gen_output_dim": 1,
+            "negative_slope": 0.2,
+            "save_interval": 5,
+            "normalization": false,
+            "mini_batch_normalization": true
+        },
+        "PGAN_parameters": {
+            "depths": [
+                256,
+                256,
+                128,
+                64,
+                32,
+                16
+            ],
+            "num_epochs": 1200,
+            "num_epochs_per_resolution": [
+                200,
+                400,
+                400,
+                600,
+                800,
+                1000
+            ],
+            "fade_in_percentage": 0.5
+        },
+        "ACGAN_parameters": {
+            "acgan": false,
+            "feature_size": 0,
+            "features_keys_order": null
+        },
+        "WGAN_parameters": {
+            "n_critic": 3,
+            "c": 0.01
+        },
+        "WGAN-GP_parameters": {
+            "lambda_gp": 10
+        }
+    },
+    "Instrument-condition": {
+        "pretrained_path":  "./../models/saved_models/WPGAN/WPGAN-GP-with-ACGAN-instruments",
+        "type_parameters": {
+            "get_type": "audio",
+            "init_resolution_size": [
+                8,
+                4
+            ]
+        },
+        "basic_model_parameters": {
+            "latent_dim": 256,
+            "output_dim": 1,
+            "learning_rate": 4e-1,
+            "loss": "WGAN",
+            "batch_size": 16,
+            "gpu": true,
+            "epsilon_D": 0.001,
+            "gen_output_dim": 1,
+            "negative_slope": 0.2,
+            "save_interval": 5,
+            "normalization": false,
+            "mini_batch_normalization": true
+        },
+        "PGAN_parameters": {
+            "depths": [
+                256,
+                256,
+                128,
+                64,
+                32,
+                16
+            ],
+            "num_epochs": 900,
+            "num_epochs_per_resolution": [
+                150,
+                300,
+                300,
+                450,
+                600,
+                750
+            ],
+            "fade_in_percentage": 0.5
+        },
+        "ACGAN_parameters": {
+            "acgan": true,
+            "feature_size": 11,
+            "features_keys_order": {
+                "instrument": 
+                {
+                    "order": 0, 
+                    "values": ["bass", "brass", "flute", "guitar", "keyboard", "mallet", "organ", "reed", "string", "synth_lead", "vocal"]
+                }
+            }
+        },
+        "WGAN_parameters": {
+            "n_critic": 3,
+            "c": 0.01
+        },
+        "WGAN-GP_parameters": {
+            "lambda_gp": 10
+        }
+    },
+    "Pitch-Velocity-Quality-condition": {
+        "pretrained_path":  "./../models/saved_models/WPGAN/WPGAN-GP-with-ACGAN-pitch-velocity-quality",
+        "type_parameters": {
+            "get_type": "audio",
+            "init_resolution_size": [
+                8,
+                4
+            ]
+        },
+        "basic_model_parameters": {
+            "latent_dim": 256,
+            "output_dim": 1,
+            "learning_rate": 4e-1,
+            "loss": "WGAN",
+            "batch_size": 16,
+            "gpu": true,
+            "epsilon_D": 0.001,
+            "gen_output_dim": 1,
+            "negative_slope": 0.2,
+            "save_interval": 5,
+            "normalization": false,
+            "mini_batch_normalization": true
+        },
+        "PGAN_parameters": {
+            "depths": [
+                256,
+                256,
+                128,
+                64,
+                32,
+                16
+            ],
+            "num_epochs": 120,
+            "num_epochs_per_resolution": [
+                20,
+                40,
+                40,
+                60,
+                80,
+                100
+            ],
+            "fade_in_percentage": 0.5
+        },
+        "ACGAN_parameters": {
+            "pretrained_path":  "./../models/saved_models/WPGAN/WPGAN-GP-acgan-best1",
+            "acgan": true,
+            "feature_size": 161,
+            "features_keys_order": {
+                "pitch": {
+                    "order": 0,
+                    "values": [
+                        9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109
+                    ]
+                },
+                "velocity": {
+                    "order": 1,
+                    "values": ["25", "50", "75", "100", "127"]
+                },
+                "qualities": {
+                    "order": 2,
+                    "values": ["dark", "distortion", "reverb", "fast_decay", "percussive", "tempo-synced", "bright", "multiphonic", "long_release", "nonlinear_env"]
+                }
+            }         
+        },
+        "WGAN_parameters": {
+            "n_critic": 3,
+            "c": 0.01
+        },
+        "WGAN-GP_parameters": {
+            "lambda_gp": 10
+        }
+    }
+}
