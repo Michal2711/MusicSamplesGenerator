@@ -151,7 +151,6 @@ class PDiscriminator(nn.Module):
         ))
 
         block.apply(self.init_weights)
-
         return block
 
     def add_next_block(self, new_depth):

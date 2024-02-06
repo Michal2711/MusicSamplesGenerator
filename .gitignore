@@ -81,6 +81,7 @@ target/
 /models/generated_samples/
 /models/saved_models/
 /notebooks/runs/
+/src/runs/
 /src/models/PGAN_model/checkpoints/
 /src/models/WGAN_model/checkpoints/
 

@@ -1,5 +1,3 @@
-# hyperparameters
-
 # type parameters
 get_type = 'audio'
 init_resolution_size=(8,4)
@@ -26,12 +24,24 @@ save_interval = 5
 normalization = False
 mini_batch_normalization = True
 
-acgan=False
-# feature_size = 0 # 116
 
-# acgan=True
+# WITHOUT ACGAN
+# acgan=False
+# feature_size = 0
+# features_keys_order = None
 
-# feature_size = 116 # 116
+# WITH ACGAN
+acgan=True
+feature_size = 11
+features_keys_order = {
+    'instrument': 
+    {
+        'order': 0, 
+        'values': ['bass', 'brass', 'flute', 'guitar', 'keyboard', 'mallet', 'organ', 'reed', 'string', 'synth_lead', 'vocal']
+    }
+}
+
+# feature_size = 116
 # features_keys_order = {
 #     'pitch': 
 #     {
@@ -50,18 +60,7 @@ acgan=False
 #     }
 # }
 
-# change BCE to cross entropy function
-# feature_size = 11
-# features_keys_order = {
-#     'instrument': 
-#     {
-#         'order': 0, 
-#         'values': ['bass', 'brass', 'flute', 'guitar', 'keyboard', 'mallet', 'organ', 'reed', 'string', 'synth_lead', 'vocal']
-#     }
-# }
-
-# dataset
-
+# DATASET
 # base_directory = "../data/raw/Bass"
 base_directory = "../data/raw/Single-bass/audio"
 # base_directory = "../data/raw/Single-piano/audio"

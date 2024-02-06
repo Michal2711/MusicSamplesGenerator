@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 import torch
 import matplotlib.pyplot as plt
 import plotly.express as px
@@ -12,44 +13,66 @@ sys.path.append('../src')
 from models.WGAN_model.WPGAN_GP import WPGAN_GP
 from models.WGAN_model.config import *
 
-# pretrained_path = './../models/saved_models/WPGAN/WPGAN-GP-single-best'
-pretrained_path = './../models/saved_models/WPGAN/WPGAN-GP-acgan-best1'
+@st.cache_resource
+def load_model_configs():
+    with open('./../models/saved_models/pre_trained_config.json', 'r') as f:
+        model_configs = json.load(f)
+    return model_configs
 
-def load_model(model_path):
+def load_model(model_config):
+
     pretrained_Music_WPGAN = WPGAN_GP(
-    latent_dim=latent_dim,
-    output_dim=output_dim,
-    lr=learning_rate,
-    loss=loss,
-    batch_size=batch_size,
-    gpu=gpu,
-    depths=depths, 
-    negative_slope=negative_slope,
-    fade_in_percentage=fade_in_percentage,
-    save_interval=save_interval,
-    normalization=normalization,
-    mini_batch_normalization=mini_batch_normalization,
-    epsilon_D=epsilon_D,
-    gen_type=get_type,
-    init_resolution_size=init_resolution_size,
-    num_epochs_per_resolution=num_epochs_per_resolution,
-    gen_output_dim=gen_output_dim,
-    c=c,
-    n_critic=n_critic
+        latent_dim=model_config['basic_model_parameters']['latent_dim'],
+        output_dim=model_config['basic_model_parameters']['output_dim'],
+        lr=model_config['basic_model_parameters']['learning_rate'],
+        loss=model_config['basic_model_parameters']['loss'],
+        batch_size=model_config['basic_model_parameters']['batch_size'],
+        gpu=model_config['basic_model_parameters']['gpu'],
+        depths=model_config['PGAN_parameters']['depths'],
+        negative_slope=model_config['basic_model_parameters']['negative_slope'],
+        fade_in_percentage=model_config['PGAN_parameters']['fade_in_percentage'],
+        save_interval=model_config['basic_model_parameters']['save_interval'],
+        normalization=model_config['basic_model_parameters']['normalization'],
+        mini_batch_normalization=model_config['basic_model_parameters']['mini_batch_normalization'],
+        epsilon_D=model_config['basic_model_parameters']['epsilon_D'],
+        gen_type=model_config['type_parameters']['get_type'],
+        init_resolution_size=model_config['type_parameters']['init_resolution_size'],
+        num_epochs_per_resolution=model_config['PGAN_parameters']['num_epochs_per_resolution'],
+        gen_output_dim=model_config['basic_model_parameters']['gen_output_dim'],
+        c=model_config['WGAN_parameters']['c'],
+        n_critic=model_config['WGAN_parameters']['n_critic'],
+        lambda_gp=model_config['WGAN-GP_parameters']['lambda_gp'],
+        acgan=model_config['ACGAN_parameters']['acgan'],
+        feature_size=model_config['ACGAN_parameters']['feature_size'],
+        features_keys_order=model_config['ACGAN_parameters']['features_keys_order']
     )
-    pretrained_Music_WPGAN.load_pretrained_model(model_path, load_optimizers=True)
+
+    pretrained_path = model_config['pretrained_path']
+    pretrained_Music_WPGAN.load_pretrained_model(pretrained_path, load_optimizers=True)
     return pretrained_Music_WPGAN
+
+def create_feature_vector(selected_features, features_keys_order):
+    feature_vector = []
+    for feature_name, feature_info in sorted(features_keys_order.items(), key=lambda item: item[1]['order']):
+        if feature_name in selected_features:
+            selected_option = selected_features[feature_name]
+            if isinstance(selected_option, list):
+                feature_vector += [1 if option in selected_option else 0 for option in feature_info['values']]
+            else:
+                feature_vector += [1 if option == selected_option else 0 for option in feature_info['values']]
+        else:
+            raise ValueError(f"Feature {feature_name} is not in the selected features.")
+    return torch.tensor(feature_vector)
 
 def generate_spectrogram_from_pretrained(pretrained_model, feature_vector):
     pretrained_model.generator.eval()
 
     with torch.no_grad():
         z = torch.randn(1, pretrained_model.latent_dim, 1, 1).to(pretrained_model.device)
-        if pretrained_model.acgan and feature_vector:
+        if pretrained_model.acgan and feature_vector.nelement() != 0:
             feature_vector = feature_vector.view(1, -1, 1, 1).to(pretrained_model.device)
             z = torch.cat((z, feature_vector), dim=1)
         generated_spectrogram = pretrained_model.generator(z)
-
         spectrogram = generated_spectrogram.cpu().detach()
         spectrogram = spectrogram.squeeze()
 
@@ -110,19 +133,6 @@ def modify_spectrogram(spectrogram, freq_range, sr=16000, n_mels=256):
         spectrogram[start_idx:end_idx, :] = 0
     return spectrogram
 
-def create_feature_vector(selected_pitch, selected_velocity, selected_qualities,
-                          pitch_options, velocity_options, qualities_options):
-
-    # source_vector = [1 if source == selected_source else 0 for source in source_options]
-    pitch_vector = [1 if source == selected_pitch else 0 for source in pitch_options]
-    velocity_vector = [1 if velocity == selected_velocity else 0 for velocity in velocity_options]
-    qualities_vector = [1 if quality in selected_qualities else 0 for quality in qualities_options]
-
-    feature_vector = pitch_vector + velocity_vector + qualities_vector
-    feature_vector = torch.tensor(feature_vector)
-
-    return feature_vector
-
 @st.cache_resource
 def cached_load_model(model_path):
     return load_model(model_path)
@@ -130,29 +140,44 @@ def cached_load_model(model_path):
 def main():
     st.title('Mel Spectrogram Generator')
 
-    model = cached_load_model(pretrained_path)
+    model_configs = load_model_configs()
+    last_model_key = st.session_state.get('last_model_key', None)
 
-    pitch_options = [i for i in range(9,110)]
-    selected_pitch = st.number_input('Select Pitch High', min_value=9, max_value=109, value=9)
+    selected_model_key = st.selectbox('Select Model Version', list(model_configs.keys()))
 
-    # source_options = ['acoustic', 'electronic', 'synthetic']
-    # selected_source = st.selectbox('Select Source', source_options)
+    if selected_model_key != last_model_key:
+        st.session_state['original_spectrogram'] = None
+        st.session_state['modified_spectrogram'] = None
+        st.session_state['feature_vector'] = None
 
-    velocity_options = [25, 50, 75, 100, 127]
-    selected_velocity = st.selectbox('Select Velocity', velocity_options)
+        st.session_state['last_model_key'] = selected_model_key
 
-    qualities_options = ['bright', 'dark', 'distortion', 'fast decay', 'long release', 'multiphonic', 'nonlinear env', 'percussive', 'reverb', 'tempo-synced']
-    selected_qualities = st.multiselect('Select Qualities (max 5)', qualities_options)
+    selected_model_config = model_configs[selected_model_key]
+    model = cached_load_model(selected_model_config)
 
-    if 'bright' in selected_qualities and 'dark' in selected_qualities:
+    if model.acgan:
+        selected_features = {}
+        for feature_name, feature_info in model.features_keys_order.items():
+            if feature_name == 'pitch':
+                selected_pitch = st.number_input('Select Pitch High', min_value=feature_info['values'][0], max_value=feature_info['values'][-1], value=feature_info['values'][0])
+                selected_features[feature_name] = selected_pitch
+            elif feature_name == 'velocity':
+                selected_velocity = st.selectbox('Select Velocity', feature_info['values'])
+                selected_features[feature_name] = selected_velocity
+            elif feature_name == 'qualities':
+                selected_qualities = st.multiselect('Select Qualities (max 5)', feature_info['values'])
+                selected_features[feature_name] = selected_qualities
+            elif feature_name == 'instrument':
+                selected_instrument = st.selectbox('Select Instrument', feature_info['values'])
+                selected_features[feature_name] = selected_instrument
+
+    if model.acgan and 'pitch' in selected_features and 'bright' in selected_qualities and 'dark' in selected_qualities:
         st.error("You cannot choose both 'bright' and 'dark'. Please select one.")
-        selected_qualities.remove('dark')
 
-    if 'fast decay' in selected_qualities and 'long release' in selected_qualities:
+    if model.acgan and 'qualities' in selected_features and 'fast_decay' in selected_qualities and 'long_release' in selected_qualities:
         st.error("You cannot choose both 'fast decay' and 'long release'. Please select one.")
-        selected_qualities.remove('long release')
 
-    if len(selected_qualities) > 5:
+    if model.acgan and 'qualities' in selected_features and len(selected_qualities) > 5:
         st.error('Please select no more than 5 qualities.')
         selected_qualities = selected_qualities[:5]
 
@@ -165,9 +190,8 @@ def main():
     if 'modified_spectrogram' not in st.session_state:
         st.session_state['modified_spectrogram'] = None
 
-    if st.button('Save conditions'):
-        st.session_state['feature_vector'] = create_feature_vector(selected_pitch, selected_velocity, selected_qualities,
-                          pitch_options, velocity_options, qualities_options)
+    if model.acgan and st.button('Save conditions'):
+        st.session_state['feature_vector'] = create_feature_vector(selected_features, model.features_keys_order)
 
     if st.button('Generate Spectrogram'):
         st.session_state['original_spectrogram'] = generate_spectrogram_from_pretrained(model, st.session_state['feature_vector'])
@@ -175,10 +199,10 @@ def main():
 
     spectrogram_to_display = st.session_state['modified_spectrogram'] if st.session_state['modified_spectrogram'] is not None else st.session_state['original_spectrogram']
     if spectrogram_to_display is not None:
-        # fig = plot_spectrogram(spectrogram_to_display)
-        # st.pyplot(fig)
-        fig = plot_spectrogram_with_plotly(spectrogram_to_display)
-        st.plotly_chart(fig, use_container_width=True)
+        fig = plot_spectrogram(spectrogram_to_display)
+        st.pyplot(fig)
+        # fig = plot_spectrogram_with_plotly(spectrogram_to_display)
+        # st.plotly_chart(fig, use_container_width=True)
 
         audio = get_audio_from_melspectrogram(spectrogram_to_display)
         buffer = io.BytesIO()

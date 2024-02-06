@@ -1,5 +1,3 @@
-# hyperparameters
-
 # type parameters
 get_type = 'audio'
 init_resolution_size=(8,4)
@@ -16,7 +14,7 @@ epsilon_D = 0.001
 
 # PGAN parameters
 depths = [256, 256, 128, 64, 32, 16]
-num_epochs = 600
+num_epochs = 1200
 i = int(num_epochs / len(depths))
 num_epochs_per_resolution = [i, 2*i, 2*i, 3*i, 4*i, 5*i]
 negative_slope = 0.2
@@ -26,12 +24,31 @@ save_interval = 5
 normalization = False
 mini_batch_normalization = True
 
-# acgan=False
-# feature_size = 0 # 116
+# WGAN parameters
+n_critic = 3 # 5
+c = 0.01
 
-acgan=True
+# WGAN-GP parameters
+lambda_gp = 10
 
-# feature_size = 116 # 116
+
+# WITHOUT ACGAN
+acgan=False
+feature_size = 0
+features_keys_order = None
+
+# WITH ACGAN
+# acgan=True
+# feature_size = 11
+# features_keys_order = {
+#     'instrument': 
+#     {
+#         'order': 0, 
+#         'values': ['bass', 'brass', 'flute', 'guitar', 'keyboard', 'mallet', 'organ', 'reed', 'string', 'synth_lead', 'vocal']
+#     }
+# }
+
+# feature_size = 116
 # features_keys_order = {
 #     'pitch': 
 #     {
@@ -50,25 +67,7 @@ acgan=True
 #     }
 # }
 
-# change BCE to cross entropy function
-feature_size = 11
-features_keys_order = {
-    'instrument': 
-    {
-        'order': 0, 
-        'values': ['bass', 'brass', 'flute', 'guitar', 'keyboard', 'mallet', 'organ', 'reed', 'string', 'synth_lead', 'vocal']
-    }
-}
-
-# WGAN parameters
-n_critic = 3 # 5
-c = 0.01
-
-# WGAN-GP parameters
-lambda_gp = 10
-# beta1 = 0.5
-
-# dataset
+# DATASET
 # base_directory = "../data/raw/Bass"
 base_directory = "../data/raw/Single-bass/audio"
 # base_directory = "../data/raw/Single-piano/audio"
@@ -77,7 +76,7 @@ base_directory = "../data/raw/Single-bass/audio"
 # base_directory = "../data/raw/Bass_Keyboard/audio"
 # base_directory = "../data/raw/Single-instrument/audio"
 
-# conditions
+# CONDITION FILES
 conditions_path = '../data/raw/Single-bass/examples.json'
 # conditions_path = '../data/raw/Single-piano/examples.json'
 # conditions_path = '../data/raw/nsynth-train/examples.json'

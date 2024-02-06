@@ -48,10 +48,14 @@ class PGenerator(nn.Module):
             device = torch.device("cpu")    
         return device
 
-    def init_weights(self, m):
+    def init_weights(self, m, init_type='normal'):
         if isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Conv2d):
-            nn.init.normal_(m.weight.data, 0.0, 0.02)
+            if init_type == 'normal':
+                nn.init.normal_(m.weight.data, 0.0, 0.02)
+            elif init_type == 'zero':
+                nn.init.constant_(m.weight.data, 0)
             m.bias.data.fill_(0.0)
+
 
     def init_first_block(self):
         self.base_block = nn.ModuleList()
@@ -93,7 +97,8 @@ class PGenerator(nn.Module):
             )
         )
 
-        self.base_block.apply(self.init_weights)
+        self.base_block.apply(lambda m: self.init_weights(m, init_type='zero'))
+
 
     def create_block(self, last_depth, new_depth):
         block = nn.ModuleList()
@@ -124,7 +129,7 @@ class PGenerator(nn.Module):
             )
         )
 
-        block.apply(self.init_weights)
+        block.apply(lambda m: self.init_weights(m, init_type='normal'))
         return block
 
     def add_next_block(self, new_depth):

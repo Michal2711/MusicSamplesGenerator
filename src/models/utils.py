@@ -1,6 +1,4 @@
 import torch
-import torch.nn as nn
-from math import inf
 import random
 
 def init_seed(rand_seed=True):

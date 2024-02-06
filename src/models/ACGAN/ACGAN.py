@@ -34,24 +34,8 @@ class ACGAN:
                     self.label_weights[shift +
                                       self.labels_order[key][value]] = weight
 
-        # TESTING DATA
-        # self.base_feature_vector = torch.zeros(1, 116)
-        # indices = [17, 105]
-        # self.base_feature_vector[0, indices] = 1
-
-        # self.bass_feature_vector = torch.zeros(1, 11)
-        # self.keyboard_feature_vector = torch.zeros(1, 11)
-        # bass_indices = [0]
-        # keyboard_indices = [4]
-        # self.bass_feature_vector[0, bass_indices] = 1
-        # self.keyboard_feature_vector[0, keyboard_indices] = 1
-
-        # self.bass_keyboard_feature_vector = torch.cat((self.bass_feature_vector, self.keyboard_feature_vector), dim=0)
-
     def create_random_feature_vectors(self, b_size):
         input_latent = []
-        # return self.base_feature_vector
-        # return self.bass_keyboard_feature_vector
 
         for i in range(self.n_features):
             C = self.feature_size[i]
